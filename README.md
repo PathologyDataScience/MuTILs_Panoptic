@@ -5,7 +5,7 @@ Access [here](https://www.medrxiv.org/content/10.1101/2022.01.08.22268814v1.full
 ```
 Amgad M, Salgado R, Cooper LA. MuTILs: explainable, multiresolution computational scoring 
 of Tumor-Infiltrating Lymphocytes in breast carcinomas using clinical guidelines. 
-medRxiv. 2022 Jan 13:2022-01.
+MedRxiv. 2022 Jan 13:2022-01.
 ```
 
 ## Abstract
