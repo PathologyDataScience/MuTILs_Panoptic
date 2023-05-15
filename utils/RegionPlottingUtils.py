@@ -6,7 +6,7 @@ from pandas import DataFrame
 import PIL
 from io import BytesIO
 
-from MuTILs_Panoptic.configs.region_model_configs import (
+from MuTILs_Panoptic.configs.panoptic_model_configs import (
     RegionCellCombination as rcc, VisConfigs
 )
 

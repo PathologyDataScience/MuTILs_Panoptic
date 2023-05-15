@@ -14,7 +14,7 @@ from typing import Callable, Union
 
 from MuTILs_Panoptic.utils.TorchUtils import transform_dlinput
 import MuTILs_Panoptic.utils.torchvision_transforms as tvdt
-from MuTILs_Panoptic.configs.region_model_configs import RegionCellCombination
+from MuTILs_Panoptic.configs.panoptic_model_configs import RegionCellCombination
 
 
 # noinspection PyPep8Naming
@@ -652,7 +652,7 @@ if __name__ == '__main__':
     from MuTILs_Panoptic.utils.RegionPlottingUtils import \
         get_visualization_ready_combined_mask
     import matplotlib.pylab as plt
-    from MuTILs_Panoptic.configs.region_model_configs import VisConfigs
+    from MuTILs_Panoptic.configs.panoptic_model_configs import VisConfigs
 
     BASEPATH = opj(os.path.expanduser('~'), 'Desktop', 'cTME')
     root = opj(BASEPATH, 'data', 'BootstrapNucleiManualRegions_05132021')

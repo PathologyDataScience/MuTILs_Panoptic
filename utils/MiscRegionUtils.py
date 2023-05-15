@@ -15,7 +15,7 @@ from MuTILs_Panoptic.utils.GeneralUtils import (
 )
 from MuTILs_Panoptic.mutils_panoptic.MuTILs import MuTILs
 from MuTILs_Panoptic.utils.TorchUtils import load_torch_model, t2np
-from MuTILs_Panoptic.configs.region_model_configs import MuTILsParams
+from MuTILs_Panoptic.configs.panoptic_model_configs import MuTILsParams
 from MuTILs_Panoptic.utils.torchvision_transforms import PILToTensor
 
 # =============================================================================

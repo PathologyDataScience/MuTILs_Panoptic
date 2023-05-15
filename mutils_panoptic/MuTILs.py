@@ -9,7 +9,7 @@ from typing import Iterable
 from torchvision.ops import roi_align
 
 from Unet import UNet
-from MuTILs_Panoptic.configs.region_model_configs import RegionCellCombination
+from MuTILs_Panoptic.configs.panoptic_model_configs import RegionCellCombination
 
 
 class MuTILsTransform(nn.Module):
