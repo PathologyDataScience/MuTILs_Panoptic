@@ -10,6 +10,6 @@ setup(
     description='',
 
     packages=find_packages(),
-    namespace_packages=['mutils_panoptic'],
+    namespace_packages=['mutils_panoptic', 'utils', 'configs'],
     zip_safe=False,
 )
