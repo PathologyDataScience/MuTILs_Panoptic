@@ -4,3 +4,6 @@ torchvision
 matplotlib
 pandas
 sklearn
+scipy
+skimage
+seaborn
