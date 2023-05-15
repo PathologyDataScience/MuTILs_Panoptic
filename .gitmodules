@@ -1,0 +1,3 @@
+[submodule "histolab"]
+	path = histolab
+	url = https://github.com/PathologyDataScience/histolab/
