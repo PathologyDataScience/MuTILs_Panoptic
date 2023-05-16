@@ -1,0 +1,11 @@
+torch
+numpy
+torchvision
+matplotlib
+pandas
+sklearn
+scipy
+skimage
+scikit-learn
+seaborn
+histomicstk
