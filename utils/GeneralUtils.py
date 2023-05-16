@@ -11,13 +11,13 @@ import traceback
 from collections.abc import MutableMapping
 from typing import Union, Iterable
 from pandas import DataFrame, read_csv, concat, json_normalize
+import warnings
+from sklearn.metrics import matthews_corrcoef
 
 # from os.path import join as opj
 # from shutil import copyfile, SameFileError
-# import warnings
 # import git  # pip install gitpython
 # from sqlalchemy import create_engine
-# from sklearn.metrics import matthews_corrcoef
 
 
 class CollectErrors:
@@ -112,17 +112,17 @@ def append_row_to_df_or_create_it(where: str, df: DataFrame):
         df.to_csv(where)
 
 
-# def calculate_mcc(truth, pred):
-#     """
-#     This is a wrapper around sklearn.metrics.mathews_corrcoef
-#     that returns nan when it's not possible to calulate mcc instead of 0.
-#     """
-#     with warnings.catch_warnings(record=True):
-#         warnings.simplefilter("error", category=RuntimeWarning)
-#         try:
-#             return matthews_corrcoef(truth, pred)
-#         except RuntimeWarning:
-#             return np.nan
+def calculate_mcc(truth, pred):
+    """
+    This is a wrapper around sklearn.metrics.mathews_corrcoef
+    that returns nan when it's not possible to calulate mcc instead of 0.
+    """
+    with warnings.catch_warnings(record=True):
+        warnings.simplefilter("error", category=RuntimeWarning)
+        try:
+            return matthews_corrcoef(truth, pred)
+        except RuntimeWarning:
+            return np.nan
 
 
 # noinspection PyPep8Naming

@@ -6,4 +6,6 @@ pandas
 sklearn
 scipy
 skimage
+scikit-learn
 seaborn
+histomicstk

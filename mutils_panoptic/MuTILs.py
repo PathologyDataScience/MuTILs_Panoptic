@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-import torch.nn.functional as F  # noqa
+import torch.nn.functional as F
 from copy import deepcopy
 from torch.jit.annotations import List, Dict, Tuple
 from torch import Tensor
