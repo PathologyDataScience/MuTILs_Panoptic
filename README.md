@@ -3,9 +3,8 @@
 ## Paper
 Access [here](https://www.medrxiv.org/content/10.1101/2022.01.08.22268814v1.full.pdf). Citation:
 ```
-Amgad M, Salgado R, Cooper LA. MuTILs: explainable, multiresolution computational scoring 
-of Tumor-Infiltrating Lymphocytes in breast carcinomas using clinical guidelines. 
-MedRxiv. 2022 Jan 13:2022-01.
+Amgad M, Salgado R, Cooper LA. A panoptic segmentation approach for tumor-infiltrating lymphocyte assessment: development of the MuTILs model and PanopTILs dataset. 
+medRxiv 2022.01.08.22268814. doi: [10.1101/2022.01.08.22268814](https://doi.org/10.1101/2022.01.08.22268814).
 ```
 
 ## Abstract
