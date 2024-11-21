@@ -65,10 +65,11 @@ class GrandChallengeConfigs:
 
 class FullcTMEConfigs:
 
-    # INPUT_PATH = opj('/data', 'MUTILS_INPUT', BaseConfigs.COHORT)
-    # OUTPUT_PATH = opj('/data', 'MUTILS_OUTPUT', BaseConfigs.COHORT)
-    INPUT_PATH = opj('/input', BaseConfigs.COHORT)
-    OUTPUT_PATH = opj('/output', BaseConfigs.COHORT)
+    CURRENT_PATH = os.path.dirname(os.path.abspath(__file__))
+    REPO_PATH = os.path.dirname(CURRENT_PATH)
+
+    INPUT_PATH = opj(REPO_PATH,'data/input', BaseConfigs.COHORT)
+    OUTPUT_PATH = opj(REPO_PATH,'data/output', BaseConfigs.COHORT)
     BASEMODELPATH = opj(
         BASEPATH, 'results', 'mutils', 'models', BaseConfigs.MODELNAME
     )
