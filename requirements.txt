@@ -3,9 +3,8 @@ numpy
 torchvision
 matplotlib
 pandas
-sklearn
 scipy
-skimage
+scikit-image
 scikit-learn
 seaborn
 histomicstk

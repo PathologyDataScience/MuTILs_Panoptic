@@ -18,3 +18,20 @@ Tumor-Infiltrating Lymphocytes (TILs) have strong prognostic and predictive valu
 ![image](https://github.com/PathologyDataScience/MuTILs_Panoptic/assets/22067552/0e43d964-f560-4e51-b268-de93255ec1bf)
 
 ![image](https://github.com/PathologyDataScience/MuTILs_Panoptic/assets/22067552/c3c36f0c-95de-446a-8a9b-3aba172304ce)
+
+## Running the WSI Runner
+
+### Setting up a virtual environment (Mac)
+
+1. `git clone https://github.com/szolgyen/MuTILs_Panoptic`
+2. `cd MuTILs_Panoptic`
+3. `git submodule update --init --recursive`
+4. `/path/to/python3.11.9 -m venv .venv`
+5. `source .venv/bin/activate`
+6. `pip install --upgrade pip`
+7. `pip install -r requirements.txt`
+8. `pip install -r histolab/requirements.txt`
+
+### Running the code
+
+1. `PYTHONPATH=/path/to/repo/root:/path/to/root/MuTILs_Panoptic python MuTILs_Panoptic/mutils_panoptic/MuTILsWSIRunner.py`
