@@ -1,0 +1,17 @@
+DEBUG: True
+
+COHORT: 'CPSII_40X'
+# COHORT: 'NiceExamplesForMuTILsPreprint'
+# COHORT: 'TCGA_BRCA'
+# COHORT: 'CPS3_40X'
+# COHORT: 'plco_breast'
+
+N_SUBSETS: 1
+
+MODELNAME: 'mutils_06022021'
+
+# Paths
+BASEPATH: 'Desktop/cTME'
+INPUT_PATH: 'Desktop/cTME/data'
+OUTPUT_PATH: 'Desktop/cTME/results'
+BASEMODELPATH: 'Desktop/cTME/models'
