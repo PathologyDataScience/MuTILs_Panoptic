@@ -1348,7 +1348,7 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
 
 if __name__ == "__main__":
 
-    from MuTILs_Panoptic.configs.MuTILsWSIRunConfigs import BaseConfigs, RunConfigs
+    from MuTILs_Panoptic.configs.MuTILsWSIRunConfigs import ParseConfigs, RunConfigs
     import argparse
 
     parser = argparse.ArgumentParser(description='Run MuTILsWSI model.')
@@ -1365,8 +1365,8 @@ if __name__ == "__main__":
         runner = MuTILsWSIRunner(
             **RunConfigs.RUN_KWARGS,
             monitor=(
-                f"{'(DEBUG)' if BaseConfigs.DEBUG else ''}"
-                f"{BaseConfigs.COHORT}: SUBSET {subset} "
+                f"{'(DEBUG)' if ParseConfigs.DEBUG else ''}"
+                f"{ParseConfigs.COHORT}: SUBSET {subset} "
                 f"{'(reverse)' if ARGS.reverse else ''}"
                 ": "
             ),

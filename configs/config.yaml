@@ -11,7 +11,46 @@ N_SUBSETS: 1
 MODELNAME: 'mutils_06022021'
 
 # Paths
-BASEPATH: 'Desktop/cTME'
-INPUT_PATH: 'Desktop/cTME/data'
-OUTPUT_PATH: 'Desktop/cTME/results'
-BASEMODELPATH: 'Desktop/cTME/models'
+BASEPATH: '/Users/lit7907/Documents/Repos/MuTILs_Panoptic'
+INPUT_PATH: '/Users/lit7907/Documents/Repos/MuTILs_Panoptic/data/input'
+OUTPUT_PATH: '/Users/lit7907/Documents/Repos/MuTILs_Panoptic/data/output'
+BASEMODELPATH: '/Users/lit7907/Documents/Repos/MuTILs_Panoptic/data/models'
+
+restrict_to_vta: False
+
+save_wsi_mask: True
+save_annotations: False
+save_nuclei_meta: True
+save_nuclei_props: True
+
+## ----------------------------------------------------------------
+## Use the following parameters to run the full cTME pipeline
+## ----------------------------------------------------------------
+# grandch: False
+# topk_rois: None
+# topk_rois_sampling_mode: "stratified"
+# topk_salient_rois: None
+
+# gcpaths: None
+# vlres_scorer_kws: None
+
+## ----------------------------------------------------------------
+## Use the following parameters to run the Grand challenge pipeline
+## ----------------------------------------------------------------
+grandch: True
+topk_rois: 300
+topk_rois_sampling_mode: "weighted"
+topk_salient_rois: 300
+
+gcpaths:
+  roilocs_in: regions-of-interest.json
+  cta2vta: Calibrations.json
+  roilocs_out: regions-of-interest.json
+  result_file: results.json
+  tilscore_file: til-score.json
+  detect_file: detected-lymphocytes.json
+  wsi_mask: segmented-stroma
+vlres_scorer_kws:
+  check_tissue: True
+  tissue_percent: 25
+  pixel_overlap: 0
