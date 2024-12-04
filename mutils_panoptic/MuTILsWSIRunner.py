@@ -79,6 +79,9 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
             # misc params
             valid_extensions=None,
             logger=None,
+            COHORT=None,
+            N_SUBSETS=None,
+            restrict_to_vta=False,
             # intra-tumoral stroma (saliency)
             filter_stromal_whitespace=False,
             min_tumor_for_saliency=4,
@@ -1348,7 +1351,7 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
 
 if __name__ == "__main__":
 
-    from MuTILs_Panoptic.configs.MuTILsWSIRunConfigs import ParseConfigs, RunConfigs
+    from MuTILs_Panoptic.configs.MuTILsWSIRunConfigs import RunConfigs
     import argparse
 
     parser = argparse.ArgumentParser(description='Run MuTILsWSI model.')
@@ -1356,21 +1359,27 @@ if __name__ == "__main__":
     parser.add_argument('-r', '--reverse', type=int, default=0)
     ARGS = parser.parse_args()
 
+    RunConfigs.initialize()
+
     for subset in ARGS.subsets:
 
+        logging.info('Entered the for loop with param: %s out of %s subsets', subset, ARGS.subsets)
+
         SLIDENAMES = RunConfigs.SLIDENAMES[subset]
+
         if ARGS.reverse:
             SLIDENAMES.reverse()
 
         runner = MuTILsWSIRunner(
             **RunConfigs.RUN_KWARGS,
             monitor=(
-                f"{'(DEBUG)' if ParseConfigs.DEBUG else ''}"
-                f"{ParseConfigs.COHORT}: SUBSET {subset} "
+                f"{'(DEBUG)' if RunConfigs.RUN_KWARGS['_debug'] else ''}"
+                f"{RunConfigs.RUN_KWARGS['COHORT']}: SUBSET {subset} "
                 f"{'(reverse)' if ARGS.reverse else ''}"
                 ": "
             ),
             keep_slides=SLIDENAMES,
             _reverse=bool(ARGS.reverse)
         )
+
         runner.run_all_slides()
