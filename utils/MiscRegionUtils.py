@@ -108,7 +108,7 @@ def load_region_configs(configs_path, warn=True):
         cfg = load_configs(configs_path=configs_path)
     else:
         print("Loading default configs")
-        import ctme.configs.region_model_configs as cfg
+        import MuTILs_Panoptic.configs.panoptic_model_configs as cfg
     return cfg
 
 
