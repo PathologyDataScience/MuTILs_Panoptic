@@ -1,17 +1,17 @@
-_debug: True
+## ----------------------------------------------------------------
+# The configuration file for running the MuTILs pipeline on WSI data
+## ----------------------------------------------------------------
+model_configs: 'panoptic_model_configs.py'
 
-COHORT: 'CPSII_40X'
-# COHORT: 'NiceExamplesForMuTILsPreprint'
-# COHORT: 'TCGA_BRCA'
-# COHORT: 'CPS3_40X'
-# COHORT: 'plco_breast'
-# COHORT: 'NHS_breast'
-
-N_SUBSETS: 1
-
-# Paths
-slides_path: '/data/akos/mutils/mutils_input/CPSII_40X'
-base_savedir: '/data/akos/mutils/mutils_output/CPSII_40X'
+## ----------------------------------------------------------------
+# Input paths
+## ----------------------------------------------------------------
+# slides_path: '/data/akos/mutils/mutils_input/plco_breast'
+slides_path: '/data/akos/mutils/mutils_input/nhs_breast'
+# slides_path: '/data/akos/mutils/mutils_input/CPSII_40X'
+# base_savedir: '/data/akos/mutils/mutils_output/plco_breast'
+base_savedir: '/data/akos/mutils/mutils_output/nhs_breast'
+# base_savedir: '/data/akos/mutils/mutils_output/CPSII_40X'
 model_paths:
   mutils_06022021-fold1: '/data/akos/mutils/mutils_models/fold_1/mutils_06022021_fold1.pt'
   mutils_06022021-fold2: '/data/akos/mutils/mutils_models/fold_2/mutils_06022021_fold2.pt'
@@ -19,17 +19,55 @@ model_paths:
   mutils_06022021-fold4: '/data/akos/mutils/mutils_models/fold_4/mutils_06022021_fold4.pt'
   mutils_06022021-fold5: '/data/akos/mutils/mutils_models/fold_5/mutils_06022021_fold5.pt'
 
-model_configs: 'panoptic_model_configs.py'
-
-restrict_to_vta: False
-
+## ----------------------------------------------------------------
+# Output saving options
+## ----------------------------------------------------------------
 save_wsi_mask: True
 save_annotations: False
 save_nuclei_meta: True
 save_nuclei_props: True
 
+## ----------------------------------------------------------------
+# Cohort options
+## ----------------------------------------------------------------
+restrict_to_vta: False
+COHORT: 'NHS_breast'
+# COHORT: 'CPSII_40X'
+# COHORT: 'NiceExamplesForMuTILsPreprint'
+# COHORT: 'TCGA_BRCA'
+# COHORT: 'CPS3_40X'
+# COHORT: 'plco_breast'
+# COHORT: 'NHS_breast'
+
+## ----------------------------------------------------------------
+# Inference configurations
+## ----------------------------------------------------------------
+# roi size and scoring
 roi_side_hres: 1024
 discard_edge_hres: 0
+roi_clust_mpp: 20.0  # 0.5x
+roi_kmeans_kvp: null
+# color normalization & augmentation
+cnorm: True
+cnorm_kwargs: null
+maskout_regions_for_cnorm: null
+ntta: 0
+dltransforms: null
+# intra-tumoral stroma (saliency)
+filter_stromal_whitespace: False
+min_tumor_for_saliency: 4
+max_salient_stroma_distance: 64
+# parsing nuclei from inference
+no_watershed_nucleus_classes: null
+min_nucl_size: 5
+max_nucl_size: 90
+nprops_kwargs: null
+
+## ----------------------------------------------------------------
+# Run configurations
+## ----------------------------------------------------------------
+N_SUBSETS: 1
+_debug: True
 
 ## ----------------------------------------------------------------
 ## Use the following parameters to run the full cTME pipeline

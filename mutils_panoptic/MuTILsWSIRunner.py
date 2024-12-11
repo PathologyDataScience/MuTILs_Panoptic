@@ -180,6 +180,7 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
                 '.svs',  # TCGA
                 '.scn',  # CPS cohorts
                 '.ndpi',  # new cps scans
+                '.mrxs',  # NHS breast
             ],
             keep_slides=keep_slides,
             reverse=self._reverse,
@@ -1365,6 +1366,13 @@ if __name__ == "__main__":
 
         logging.info('Entered the for loop with param: %s out of %s subsets', subset, ARGS.subsets)
 
+        monitor = (
+                f"{'(DEBUG)' if RunConfigs.RUN_KWARGS['_debug'] else ''}"
+                f"{RunConfigs.RUN_KWARGS['COHORT']}: SUBSET {subset} "
+                f"{'(reverse)' if ARGS.reverse else ''}"
+                ": "
+            )
+
         SLIDENAMES = RunConfigs.SLIDENAMES[subset]
 
         if ARGS.reverse:
@@ -1372,12 +1380,7 @@ if __name__ == "__main__":
 
         runner = MuTILsWSIRunner(
             **RunConfigs.RUN_KWARGS,
-            monitor=(
-                f"{'(DEBUG)' if RunConfigs.RUN_KWARGS['_debug'] else ''}"
-                f"{RunConfigs.RUN_KWARGS['COHORT']}: SUBSET {subset} "
-                f"{'(reverse)' if ARGS.reverse else ''}"
-                ": "
-            ),
+            monitor=monitor,
             keep_slides=SLIDENAMES,
             _reverse=bool(ARGS.reverse)
         )

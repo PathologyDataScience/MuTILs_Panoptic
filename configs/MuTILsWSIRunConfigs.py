@@ -140,6 +140,24 @@ class RunConfigs:
         return [j for j in ALL_SLIDENAMES if j.split('_')[0] in SLIDENAMES]
 
     @staticmethod
+    def get_slide_names_for_NHS_breast(ALL_SLIDENAMES: list, n_subsets: int) -> list:
+        """Get slide names for NHS breast cohort.
+
+        Args:
+            run_kwargs (dict): Configuration dictionary.
+            all_slidenames (list): List of all slide names.
+
+        Returns:
+            list: Filtered list of slide names.
+        """
+        SLIDENAMES = []
+        for slide_name in ALL_SLIDENAMES:
+            if slide_name.endswith('.mrxs'):
+                SLIDENAMES.append(slide_name)
+        return splitlist(SLIDENAMES, len(SLIDENAMES) // n_subsets)
+
+
+    @staticmethod
     def get_slide_names(run_kwargs: dict) -> list:
         """Get slide names based on the cohort and restrictions to
         subdivide them to run on multiple docker instances.
@@ -156,6 +174,8 @@ class RunConfigs:
             return RunConfigs.get_slidenames_for_tcga(run_kwargs, all_slidenames)
         elif run_kwargs['COHORT'].endswith('CPS2') and run_kwargs['restrict_to_vta']:
             return RunConfigs.get_slidenames_for_cps2(run_kwargs, all_slidenames)
+        elif run_kwargs['COHORT'] == 'NHS_breast':
+            return RunConfigs.get_slide_names_for_NHS_breast(all_slidenames, run_kwargs['N_SUBSETS'])
         else:
             all_slidenames.sort()
             return splitlist(all_slidenames, len(all_slidenames) // run_kwargs['N_SUBSETS'])
