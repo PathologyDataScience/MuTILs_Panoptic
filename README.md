@@ -26,7 +26,7 @@ Use a containerized environment to run and train MuTILs.
 
 MuTILs has been developed as a part of cTME (Computational pipelines for analysis of Tumor MicroEnvironment) project for which there is a publicly available Docker image. For convenience, follow the steps below to set up the environment and make an inference with MuTILs.
 
-Clone this repository then pull and start the container on your GPU server.
+Clone this repository then pull the container on your GPU server.
 
 1. `git clone https://github.com/szolgyen/MuTILs_Panoptic`
 2. `cd MuTILs_Panoptic`
@@ -44,15 +44,18 @@ Modify both files of
 
  with the correct paths of files and folders on your system.
 
-### Start the container
+### Start the container and build Cython modules within the container
 
 5. `./run_container.sh`
+6. `cd /home/mtageld/Desktop/MuTILs_Panoptic/utils/CythonUtils`
+7. `python setup.py build_ext --inplace`
+8. `cd /home/mtageld/Desktop/`
 
 ### Run MuTILsWSIRunner.py
 
 Within the container, run the MuTILsWSIRunner.py module to perform inference on your set of slides at the location defined in the configuration YAML file.
 
-6. `python MuTILs_Panoptic/mutils_panoptic/MuTILsWSIRunner.py`
+9. `python MuTILs_Panoptic/mutils_panoptic/MuTILsWSIRunner.py`
 
 Note: Do not forget to give permission to your folders to make them accessible for MuTILs.
 
