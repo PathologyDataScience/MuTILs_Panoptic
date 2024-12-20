@@ -28,7 +28,7 @@ MuTILs has been developed as a part of cTME (Computational pipelines for analysi
 
 Clone this repository then pull the container on your GPU server.
 
-1. `git clone https://github.com/szolgyen/MuTILs_Panoptic`
+1. `git clone https://github.com/PathologyDataScience/MuTILs_Panoptic`
 2. `cd MuTILs_Panoptic`
 3. `git submodule update --init --recursive`
 4. `docker pull kheffah/ctme`
