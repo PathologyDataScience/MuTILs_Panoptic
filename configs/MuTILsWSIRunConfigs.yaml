@@ -6,18 +6,15 @@ model_configs: 'panoptic_model_configs.py'
 ## ----------------------------------------------------------------
 # Input paths
 ## ----------------------------------------------------------------
-# slides_path: '/data/akos/mutils/mutils_input/plco_breast'
-slides_path: '/data/akos/mutils/mutils_input/nhs_breast'
-# slides_path: '/data/akos/mutils/mutils_input/CPSII_40X'
-# base_savedir: '/data/akos/mutils/mutils_output/plco_breast'
-base_savedir: '/data/akos/mutils/mutils_output/nhs_breast'
-# base_savedir: '/data/akos/mutils/mutils_output/CPSII_40X'
+slides_path: '/path/to/the/slides/directory'
+base_savedir: '/path/to/the/output/directory'
+
 model_paths:
-  mutils_06022021-fold1: '/data/akos/mutils/mutils_models/fold_1/mutils_06022021_fold1.pt'
-  mutils_06022021-fold2: '/data/akos/mutils/mutils_models/fold_2/mutils_06022021_fold2.pt'
-  mutils_06022021-fold3: '/data/akos/mutils/mutils_models/fold_3/mutils_06022021_fold3.pt'
-  mutils_06022021-fold4: '/data/akos/mutils/mutils_models/fold_4/mutils_06022021_fold4.pt'
-  mutils_06022021-fold5: '/data/akos/mutils/mutils_models/fold_5/mutils_06022021_fold5.pt'
+  mutils_06022021-fold1: '/path/to/the/mutils/model/weights/fold_1/mutils_06022021_fold1.pt'
+  mutils_06022021-fold2: '/path/to/the/mutils/model/weights/fold_2/mutils_06022021_fold2.pt'
+  mutils_06022021-fold3: '/path/to/the/mutils/model/weights/fold_3/mutils_06022021_fold3.pt'
+  mutils_06022021-fold4: '/path/to/the/mutils/model/weights/fold_4/mutils_06022021_fold4.pt'
+  mutils_06022021-fold5: '/path/to/the/mutils/model/weights/fold_5/mutils_06022021_fold5.pt'
 
 ## ----------------------------------------------------------------
 # Output saving options
@@ -31,9 +28,8 @@ save_nuclei_props: True
 # Cohort options
 ## ----------------------------------------------------------------
 restrict_to_vta: False
-COHORT: 'NHS_breast'
+COHORT: 'Name_of_your_custom_cohort'
 # COHORT: 'CPSII_40X'
-# COHORT: 'NiceExamplesForMuTILsPreprint'
 # COHORT: 'TCGA_BRCA'
 # COHORT: 'CPS3_40X'
 # COHORT: 'plco_breast'
@@ -89,13 +85,13 @@ vlres_scorer_kws: null
 # topk_salient_rois: 300
 
 # gcpaths:
-#   roilocs_in: '/data/akos/mutils/mutils_input/regions-of-interest.json'
-#   cta2vta: '/home/lit7907/repos/cTME/Calibrations.json'
-#   roilocs_out: '/data/akos/mutils/mutils_output/regions-of-interest.json'
-#   result_file: '/data/akos/mutils/mutils_output/results.json'
-#   tilscore_file: '/data/akos/mutils/mutils_output/til-score.json'
-#   detect_file: '/data/akos/mutils/mutils_output/detected-lymphocytes.json'
-#   wsi_mask: '/data/akos/mutils/mutils_output/images/segmented-stroma'
+#   roilocs_in: '/path/to/regions-of-interest.json'
+#   cta2vta: '/path/to/Calibrations.json'
+#   roilocs_out: '/path/to/regions-of-interest.json'
+#   result_file: '/path/to/results.json'
+#   tilscore_file: '/path/to/til-score.json'
+#   detect_file: '/path/to/detected-lymphocytes.json'
+#   wsi_mask: '/path/to/images/segmented-stroma'
 # vlres_scorer_kws:
 #   check_tissue: True
 #   tissue_percent: 25
@@ -104,5 +100,5 @@ vlres_scorer_kws: null
 ## ----------------------------------------------------------------
 ## Use cohort specific parameters if running TCGA_BRCA or CPS3_40X
 ## ----------------------------------------------------------------
-# data_file_path: '/home/lit7907/repos/cTME/data/tcga-clinical/PRIVATE_RSalgado_TCGA_TILScores.csv'
-# data_file_path: '/home/lit7907/repos/cTME/data/acs-clinical/CPSII_BRCA_FacilityIDs_20210331.csv'
+# data_file_path: '/path/to/tcga-clinical/PRIVATE_RSalgado_TCGA_TILScores.csv'
+# data_file_path: '/path/to/acs-clinical/CPSII_BRCA_FacilityIDs_20210331.csv'
