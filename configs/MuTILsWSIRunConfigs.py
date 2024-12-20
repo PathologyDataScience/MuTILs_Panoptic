@@ -1,206 +1,181 @@
 import os
 from os.path import join as opj
 from pandas import read_csv
+import yaml
 
+from MuTILs_Panoptic.utils.MiscRegionUtils import get_configured_logger, load_region_configs
+from MuTILs_Panoptic.utils.GeneralUtils import splitlist
 
-HOME = os.path.expanduser('~')
-BASEPATH = opj(HOME, 'Desktop', 'cTME')
+configuration_file = os.path.abspath(__file__).split('.')[0] + '.yaml'
 
+class Logger:
 
-class BaseConfigs:
+    @staticmethod
+    def set_up_logger(log_dir: str) -> object:
+        """ Set up the logger for the project.
 
-    DEBUG = True  # IMPORTANT: debug??
+        Args:
+            log_dir (str): Path to the directory where the logs will be saved.
 
-    # COHORT = 'NiceExamplesForMuTILsPreprint'
-    # COHORT = 'TCGA_BRCA'
-    COHORT = 'CPSII_40X'
-    # COHORT = 'CPS3_40X'
-    # COHORT = 'plco_breast'
+        Returns:
+            object: The logger object."""
+        if not os.path.exists(log_dir):
+            raise FileNotFoundError('Folder does not exist')
 
-    N_SUBSETS = 1
-    # N_SUBSETS = 8 if not DEBUG else 1
-    # N_SUBSETS = 16 if not DEBUG else 1
+        LOGDIR = opj(log_dir, 'LOGS')
+        os.makedirs(LOGDIR, exist_ok=True)
 
-    MODELNAME = 'mutils_06022021'
+        logger = get_configured_logger(logdir=LOGDIR, prefix='MuTILsWSIRunner', tofile=True)
+        return logger
 
+class ConfigParser:
 
-class GrandChallengeConfigs:
+    @staticmethod
+    def parse_config(config_file: str) -> dict:
+        """Load configuration from a YAML file.
 
-    WORKPATH = opj(HOME, 'Desktop', 'TILS_CHALLENGE')
-    INPUT_PATH = opj(WORKPATH, '1_INPUT', BaseConfigs.COHORT)
-    OUTPUT_PATH = opj(WORKPATH, '2_OUTPUT', BaseConfigs.COHORT)
-    BASEMODELPATH = opj(WORKPATH, '0_MODELS', BaseConfigs.MODELNAME)
+        Args:
+            config_file (str): Path to the configuration file.
 
-    restrict_to_vta = False
+        Returns:
+            dict: The parsed configuration as a dictionary.
 
-    save_wsi_mask = True
-    save_annotations = True
-    save_nuclei_meta = False
-    save_nuclei_props = False
+        Raises:
+            FileNotFoundError: If the configuration file is not found.
+            yaml.YAMLError: If there is an error parsing the YAML file.
+        """
+        try:
+            with open(config_file, 'r') as ymlfile:
+                return yaml.load(ymlfile, Loader=yaml.FullLoader)
+        except FileNotFoundError as fnfe:
+            raise fnfe
+        except yaml.YAMLError as ye:
+            raise ye
 
-    grandch = True
+    @staticmethod
+    def check_config(config_dictionary: dict) -> None:
+        """Check if the configuration values are set in the config file properly.
 
-    # uncomment below to run on GC platform which runs on one slide at a time
-    # so the slides will overwrite these files
-    gcpaths = {
-        'roilocs_in': opj(INPUT_PATH, "regions-of-interest.json"),
-        'cta2vta': opj(WORKPATH, '0_MODELS', 'Calibrations.json'),
-        'roilocs_out': opj(OUTPUT_PATH, 'regions-of-interest.json'),
-        'result_file': opj(OUTPUT_PATH, 'results.json'),
-        'tilscore_file': opj(OUTPUT_PATH, 'til-score.json'),
-        'detect_file': opj(OUTPUT_PATH, 'detected-lymphocytes.json'),
-        'wsi_mask': opj(OUTPUT_PATH, 'images', 'segmented-stroma'),
-    }
-    # gcpaths = None  # each slide has its own folder (no overwrite)
+        Args:
+            config_dictionary (dict): Configuration dictionary
 
-    topk_rois = 300
-    topk_rois_sampling_mode = "weighted"
-    topk_salient_rois = 300
-    vlres_scorer_kws = {
-        'check_tissue': True,
-        'tissue_percent': 25,
-        'pixel_overlap': 0,
-    }
-
-
-class FullcTMEConfigs:
-
-    # INPUT_PATH = opj('/data', 'MUTILS_INPUT', BaseConfigs.COHORT)
-    # OUTPUT_PATH = opj('/data', 'MUTILS_OUTPUT', BaseConfigs.COHORT)
-    INPUT_PATH = opj('/input', BaseConfigs.COHORT)
-    OUTPUT_PATH = opj('/output', BaseConfigs.COHORT)
-    BASEMODELPATH = opj(
-        BASEPATH, 'results', 'mutils', 'models', BaseConfigs.MODELNAME
-    )
-
-    restrict_to_vta = False
-
-    save_wsi_mask = True
-    save_annotations = False
-    save_nuclei_meta = True
-    save_nuclei_props = True
-
-    grandch = False
-    gcpaths = None
-    topk_rois = None
-    topk_rois_sampling_mode = "stratified"
-    topk_salient_rois = None
-    vlres_scorer_kws = None
-
-
-class NiceExamplesForMuTILsPreprintConfigs:
-
-    INPUT_PATH = opj('/input', BaseConfigs.COHORT)
-    OUTPUT_PATH = opj('/output', BaseConfigs.COHORT)
-    BASEMODELPATH = opj(
-        BASEPATH, 'results', 'mutils', 'models', BaseConfigs.MODELNAME
-    )
-
-    restrict_to_vta = False
-
-    save_wsi_mask = True
-    save_annotations = False
-    save_nuclei_meta = False
-    save_nuclei_props = False
-
-    grandch = False
-    gcpaths = None
-    topk_rois = None
-    topk_rois_sampling_mode = "stratified"
-    topk_salient_rois = None
-    vlres_scorer_kws = None
-
+        Raises:
+            KeyError: If any of the required configuration values are not set in the config file.
+        """
+        required_keys = ['_debug', 'COHORT', 'N_SUBSETS', 'slides_path', 'base_savedir', 'model_paths',
+                         'model_configs', 'restrict_to_vta', 'save_wsi_mask', 'save_annotations',
+                         'save_nuclei_meta', 'save_nuclei_props', 'roi_side_hres', 'discard_edge_hres',
+                         'grandch', 'gcpaths', 'topk_rois', 'topk_rois_sampling_mode',
+                         'topk_salient_rois', 'vlres_scorer_kws'
+        ]
+        for key in required_keys:
+            if key not in config_dictionary:
+                raise KeyError(f'{key} not set in config file')
 
 class RunConfigs:
 
-    # IMPORTANT: THIS SWITCHES THE ANALYSIS TYPE
-    # cfg = NiceExamplesForMuTILsPreprintConfigs
-    # cfg = GrandChallengeConfigs
-    cfg = FullcTMEConfigs
+    @classmethod
+    def initialize(cls):
+        """Initialize the configuration parameters for the pipeline.
+        """
+        # Load configuration parameters from the YAML file
+        cls.RUN_KWARGS = ConfigParser.parse_config(configuration_file)
+        ConfigParser.check_config(cls.RUN_KWARGS)
 
-    os.makedirs(cfg.OUTPUT_PATH, exist_ok=True)
+        # Set further configuration parameters
+        cls.RUN_KWARGS['logger'] = Logger.set_up_logger(cls.RUN_KWARGS['base_savedir'])
+        cls.RUN_KWARGS['model_configs'] = load_region_configs(cls.RUN_KWARGS['model_configs'], warn=False)
 
-    # Configure logger. This must be done BEFORE importing histolab modules
-    from MuTILs_Panoptic.utils.MiscRegionUtils import \
-        get_configured_logger, load_region_configs
+        if cls.RUN_KWARGS['grandch']:
+            cls.RUN_KWARGS['logger'].info(f'Running Grand Challenge pipeline')
+        else:
+            cls.RUN_KWARGS['logger'].info(f'Running full cTME pipeline')
 
-    LOGDIR = opj(cfg.OUTPUT_PATH, 'LOGS')
-    os.makedirs(LOGDIR, exist_ok=True)
-    LOGGER = get_configured_logger(
-        logdir=LOGDIR, prefix='MuTILsWSIRunner', tofile=True
-    )
+        cls.SLIDENAMES = cls.get_slide_names(cls.RUN_KWARGS)
 
-    # model weights
-    MODEL_PATHS = {}
-    for f in range(1, 6):
-        MODEL_PATHS[f'{BaseConfigs.MODELNAME}-fold{f}'] = opj(
-            cfg.BASEMODELPATH, f'fold_{f}', f'{BaseConfigs.MODELNAME}_fold{f}.pt'
-        )
+    @staticmethod
+    def get_slidenames_for_tcga(RUN_KWARGS: dict, ALL_SLIDENAMES: list) -> list:
+        """Get slide names for TCGA cohort.
+        NOTE: Legacy slidename splitting for TCGA. This should be replaced with a more genaral approach.
 
-    # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-    # Subdividing cohort to run on multiple docker instances
+        Args:
+            run_kwargs (dict): Configuration dictionary.
+            all_slidenames (list): List of all slide names.
 
-    from MuTILs_Panoptic.utils.GeneralUtils import splitlist
+        Returns:
+            list: Filtered list of slide names.
+        """
+        try:
+            if not os.path.exists(RUN_KWARGS['data_file_path']):
+                raise FileNotFoundError('PRIVATE_RSalgado_TCGA_TILScores.csv file not found')
+        except KeyError:
+            raise KeyError('data_file_path not set in the MuTILsWSIRunConfigs.yaml file')
 
-    ALL_SLIDENAMES = os.listdir(cfg.INPUT_PATH)
-
-    if BaseConfigs.COHORT.startswith('TCGA') and cfg.restrict_to_vta:
-        # RESTRICT TO ROBERTO SALGADO ASSESSED SLIDES
-        from MuTILs_Panoptic.utils.GeneralUtils import splitlist
-        SLIDENAMES = read_csv(opj(
-            BASEPATH, 'data', 'tcga-clinical',
-            'PRIVATE_RSalgado_TCGA_TILScores.csv'
-        )).iloc[:, 0].to_list()
+        SLIDENAMES = read_csv(RUN_KWARGS['data_file_path']).iloc[:, 0].to_list()
         SLIDENAMES = [j[:12] for j in SLIDENAMES]
-        SLIDENAMES = [j for j in ALL_SLIDENAMES if j[:12] in SLIDENAMES]
+        return [j for j in ALL_SLIDENAMES if j[:12] in SLIDENAMES]
 
-    elif BaseConfigs.COHORT.endswith('CPS2') and cfg.restrict_to_vta:
-        # RESTRICT TO TED ASSESSED SLIDES (CPS2)
-        acs_vta = read_csv(
-            opj(BASEPATH, 'data', 'acs-clinical',
-                'CPSII_BRCA_FacilityIDs_20210331.csv'),
-            index_col=0)
+    @staticmethod
+    def get_slidenames_for_CPS2(RUN_KWARGS: dict, ALL_SLIDENAMES: list) -> list:
+        """Get slide names for CPS2 cohort.
+        NOTE: Legacy slidename splitting for CPS2. This should be replaced with a more genaral approach.
+
+        Args:
+            run_kwargs (dict): Configuration dictionary.
+            all_slidenames (list): List of all slide names.
+
+        Returns:
+            list: Filtered list of slide names.
+        """
+        try:
+            if not os.path.exists(RUN_KWARGS['data_file_path']):
+                raise FileNotFoundError('PSII_BRCA_FacilityIDs_20210331.csv file not found')
+        except KeyError:
+            raise KeyError('data_file_path not set in the MuTILsWSIRunConfigs.yaml file')
+
+        acs_vta = read_csv(RUN_KWARGS['data_file_path'], index_col=0)
         acs_vta.rename(columns={'TILS_STR': 'vta'}, inplace=True)
         acs_vta = acs_vta.loc[:, 'vta'].map(lambda x: float(x) / 100).dropna()
         SLIDENAMES = list(acs_vta.index)
-        SLIDENAMES = [j for j in ALL_SLIDENAMES if j.split('_')[0] in SLIDENAMES]
+        return [j for j in ALL_SLIDENAMES if j.split('_')[0] in SLIDENAMES]
 
-    else:
-        SLIDENAMES = ALL_SLIDENAMES
-        SLIDENAMES.sort()
-        SLIDENAMES = splitlist(
-            SLIDENAMES, len(SLIDENAMES) // BaseConfigs.N_SUBSETS
-        )
+    @staticmethod
+    def get_slide_names_for_NHS_breast(ALL_SLIDENAMES: list, n_subsets: int) -> list:
+        """Get slide names for NHS breast cohort.
 
-    # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+        Args:
+            run_kwargs (dict): Configuration dictionary.
+            all_slidenames (list): List of all slide names.
 
-    RUN_KWARGS = dict(
+        Returns:
+            list: Filtered list of slide names.
+        """
+        SLIDENAMES = []
+        for slide_name in ALL_SLIDENAMES:
+            if slide_name.endswith('.mrxs'):
+                SLIDENAMES.append(slide_name)
+        return splitlist(SLIDENAMES, len(SLIDENAMES) // n_subsets)
 
-        # paths & slides
-        model_configs=load_region_configs(
-            opj(cfg.BASEMODELPATH, 'region_model_configs.py'), warn=False
-        ),
-        model_paths=MODEL_PATHS,
-        slides_path=cfg.INPUT_PATH,
-        base_savedir=cfg.OUTPUT_PATH,
 
-        # size params
-        # roi_side_hres=512 if BaseConfigs.DEBUG else 1024,
-        roi_side_hres=1024,
-        discard_edge_hres=0,  # keep 0 -> slow + can't get the gap to be exact
-        logger=LOGGER,
+    @staticmethod
+    def get_slide_names(run_kwargs: dict) -> list:
+        """Get slide names based on the cohort and restrictions to
+        subdivide them to run on multiple docker instances.
 
-        # Defined in cfg
-        save_wsi_mask=cfg.save_wsi_mask,
-        save_annotations=cfg.save_annotations,
-        save_nuclei_meta=cfg.save_nuclei_meta,
-        save_nuclei_props=cfg.save_nuclei_props,
-        grandch=cfg.grandch,
-        gcpaths=cfg.gcpaths,
-        topk_rois=cfg.topk_rois,
-        topk_rois_sampling_mode=cfg.topk_rois_sampling_mode,
-        topk_salient_rois=cfg.topk_salient_rois,
-        vlres_scorer_kws=cfg.vlres_scorer_kws,
+        Args:
+            run_kwargs (dict): Configuration dictionary.
 
-        _debug=BaseConfigs.DEBUG,
-    )
+        Returns:
+            list: List of slide names.
+        """
+        all_slidenames = os.listdir(run_kwargs['slides_path'])
+
+        if run_kwargs['COHORT'].startswith('TCGA') and run_kwargs['restrict_to_vta']:
+            return RunConfigs.get_slidenames_for_tcga(run_kwargs, all_slidenames)
+        elif run_kwargs['COHORT'].endswith('CPS2') and run_kwargs['restrict_to_vta']:
+            return RunConfigs.get_slidenames_for_cps2(run_kwargs, all_slidenames)
+        elif run_kwargs['COHORT'] == 'NHS_breast':
+            return RunConfigs.get_slide_names_for_NHS_breast(all_slidenames, run_kwargs['N_SUBSETS'])
+        else:
+            all_slidenames.sort()
+            return splitlist(all_slidenames, len(all_slidenames) // run_kwargs['N_SUBSETS'])
