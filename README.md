@@ -59,6 +59,6 @@ Within the container, run the MuTILsWSIRunner.py module to perform inference on 
 
 Note: Do not forget to give permission to your folders to make them accessible for MuTILs.
 
-### Request access to the model weights
+### Model weights
 
-Please, contact the authors to request access to the model weights.
+https://huggingface.co/mutils-panoptic/mutils/tree/main
