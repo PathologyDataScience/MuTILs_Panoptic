@@ -16,12 +16,12 @@ from histomicstk.preprocessing.color_deconvolution import (
     color_deconvolution_routine)
 
 # histolab modules
-from MuTILs_Panoptic.histolab.src.histolab.slide import Slide, SlideSet
-from MuTILs_Panoptic.histolab.src.histolab.tile import Tile
-from MuTILs_Panoptic.histolab.src.histolab.tiler import ScoreTiler
-from MuTILs_Panoptic.histolab.src.histolab.types import CoordinatePair
-from MuTILs_Panoptic.histolab.src.histolab.masks import BiggestTissueBoxMask
-from MuTILs_Panoptic.histolab.src.histolab.filters.image_filters_functional \
+from histolab.slide import Slide, SlideSet
+from histolab.tile import Tile
+from histolab.tiler import ScoreTiler
+from histolab.types import CoordinatePair
+from histolab.masks import BiggestTissueBoxMask
+from histolab.filters.image_filters_functional \
     import rag_threshold
 
 # mutils
