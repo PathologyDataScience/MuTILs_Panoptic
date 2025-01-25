@@ -28,34 +28,47 @@ MuTILs has been developed as a part of cTME (Computational pipelines for analysi
 
 Clone this repository then pull the container on your GPU server.
 
-1. `git clone https://github.com/PathologyDataScience/MuTILs_Panoptic`
+1. `git clone https://github.com/szolgyen/MuTILs_Panoptic`
 2. `cd MuTILs_Panoptic`
-3. `git submodule update --init --recursive`
-4. `docker pull kheffah/ctme`
+3. `git switch dev-szolgyen-refaq`
+4. `git submodule update --init --recursive`
+5. `cd histolab`
+6. `git switch dev-szolgyen`
+7. `docker pull szolgyen/mutils:v0`
 
+Todo: This is going to be replaced with an installer.
 
-The code is built on Python 3.8 and the container environment hosts a 10.2 CUDA on a 18.04 Ubuntu system.
+The code is built on Python 3.10.12 and the container environment hosts a 12.0.0 CUDA on a 22.04 Ubuntu system.
 
 ### Set configurations
 
 Modify both files of
- - `MuTILs_Panoptic/run_container.sh`
+ - `MuTILs_Panoptic/docker-compose.yaml`
  - `MuTILs_Panoptic/configs/MuTILsWSIRunConfigs.yaml`
 
  with the correct paths of files and folders on your system.
 
 ### Start the container and build Cython modules within the container
 
-5. `./run_container.sh`
-6. `cd /home/mtageld/Desktop/MuTILs_Panoptic/utils/CythonUtils`
-7. `python setup.py build_ext --inplace`
-8. `cd /home/mtageld/Desktop/`
+8. `docker-compose up`
+
+In a separate terminal, attach to the container:
+
+9. `docker attach MutilsDev1`
+
+Once within the container, set up Cython modules:
+
+10. `cd /home/MuTILs_Panoptic/utils/CythonUtils`
+11. `python setup.py build_ext --inplace`
+12. `cd /home/`
+
+Todo: This has to be handled by an installer too.
 
 ### Run MuTILsWSIRunner.py
 
 Within the container, run the MuTILsWSIRunner.py module to perform inference on your set of slides at the location defined in the configuration YAML file.
 
-9. `python MuTILs_Panoptic/mutils_panoptic/MuTILsWSIRunner.py`
+13. `python MuTILs_Panoptic/mutils_panoptic/MuTILsWSIRunner.py`
 
 Note: Do not forget to give permission to your folders to make them accessible for MuTILs.
 
