@@ -22,55 +22,79 @@ Tumor-Infiltrating Lymphocytes (TILs) have strong prognostic and predictive valu
 
 ### Containerized approach
 
-Use a containerized environment to run and train MuTILs.
+We recommend using the Docker image "szolgyen/mutils:v1" to perform inference with MuTILs It is publicly available from Docker Hub. The image comes with a 22.04 Ubuntu system and an activated Python 3.10.12 virtual environment with all necessary packages for MuTILs. The image is built on [nvidia/cuda:12.0.0-base-ubuntu22.04](https://hub.docker.com/layers/nvidia/cuda/12.0.0-base-ubuntu22.04/images/sha256-3b6f49136ec6725b6fcc0fc04f2f7711d3d1e22d0328da2ca73e52dbd37fa4b1) with 12.0.0 CUDA. For details on dependencies, see the [Dockerfile](https://github.com/szolgyen/MuTILs_Panoptic/blob/dev-szolgyen-refaq/Dockerfile) of this repository.
 
-MuTILs has been developed as a part of cTME (Computational pipelines for analysis of Tumor MicroEnvironment) project for which there is a publicly available Docker image. For convenience, follow the steps below to set up the environment and make an inference with MuTILs.
+#### Pull the docker image on your GPU server:
 
-Clone this repository then pull the container on your GPU server.
+1. `docker pull szolgyen/mutils:v1`
 
-1. `git clone https://github.com/szolgyen/MuTILs_Panoptic`
-2. `cd MuTILs_Panoptic`
-3. `git switch dev-szolgyen-refaq`
-4. `git submodule update --init --recursive`
-5. `cd histolab`
-6. `git switch dev-szolgyen`
-7. `docker pull szolgyen/mutils:v0`
+We recommend using a `docker-compose.yaml` file to start the container, see this example
 
-Todo: This is going to be replaced with an installer.
+```yaml
+version: '3'
 
-The code is built on Python 3.10.12 and the container environment hosts a 12.0.0 CUDA on a 22.04 Ubuntu system.
+services:
+  mutilsdev:
+    image: szolgyen/mutils:v1
+    container_name: MutilsInference
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=1
+    ipc: host
+    network_mode: host
+    volumes:
+      - /your/path/to/the/model/weights:/home/models
+      - /your/path/to/the/input/files:/home/input
+      - /your/path/to/the/output/files:/home/output
+    ulimits:
+      core: 0
+    stdin_open: true
+    tty: true
+    restart: "no"
+```
+The container needs the
 
-### Set configurations
+- /home/models
+- /home/input
+- /home/output
 
-Modify both files of
- - `MuTILs_Panoptic/docker-compose.yaml`
- - `MuTILs_Panoptic/configs/MuTILsWSIRunConfigs.yaml`
+mounting points to be connected to the corresponding server volumes. Make sure that these are set properly in the `docker-compose.yaml` file.
 
- with the correct paths of files and folders on your system.
+#### Start the container
 
-### Start the container and build Cython modules within the container
+2. `docker-compose up`
 
-8. `docker-compose up`
+Once the container is up, attach to it in a separate terminal window:
 
-In a separate terminal, attach to the container:
+3. `docker attach MutilsInference`
 
-9. `docker attach MutilsDev1`
+Within the container, check and customize the configuration file at
 
-Once within the container, set up Cython modules:
+4. `/home/MuTILs_Panoptic/configs/MuTILsWSIRunConfigs.yaml`,
 
-10. `cd /home/MuTILs_Panoptic/utils/CythonUtils`
-11. `python setup.py build_ext --inplace`
-12. `cd /home/`
+and run the MuTILsWSIRunner.py module to perform inference on your set of slides
 
-Todo: This has to be handled by an installer too.
+5. `python MuTILs_Panoptic/mutils_panoptic/MuTILsWSIRunner.py`
 
-### Run MuTILsWSIRunner.py
+### Recommended directory structure
 
-Within the container, run the MuTILsWSIRunner.py module to perform inference on your set of slides at the location defined in the configuration YAML file.
-
-13. `python MuTILs_Panoptic/mutils_panoptic/MuTILsWSIRunner.py`
-
-Note: Do not forget to give permission to your folders to make them accessible for MuTILs.
+```
+Host (recommended)                      Container (default)
+.                                          home
+├── models                                  ├── models
+│   ├── fold_1                              │   ├── fold_1
+│   │    └── mutils_06022021_fold1.pt       │   │    └── mutils_06022021_fold1.pt
+│   ├── fold_2                              │   ├── fold_2
+│   │    └── mutils_06022021_fold2.pt       │   │    └── mutils_06022021_fold2.pt
+│   ├── fold_3                              │   ├── fold_3
+│   │    └── mutils_06022021_fold3.pt       │   │    └── mutils_06022021_fold3.pt
+│   ├── fold_4                              │   ├── fold_4
+│   │    └── mutils_06022021_fold4.pt       │   │    └── mutils_06022021_fold4.pt
+│   └── fold_5                              │   └── fold_5
+│        └── mutils_06022021_fold5.pt       │        └── mutils_06022021_fold5.pt
+├── input                                   ├── input
+├── output                                  └── output
+└── docker-compose.yaml
+```
 
 ### Model weights
 
