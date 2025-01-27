@@ -35,7 +35,7 @@ WORKDIR /home
 # Create and activate a virtual environment
 RUN python3 -m venv venv
 
-# Upgrade pip and install all Python dependencies
+# Upgrade pip and install Python dependencies
 RUN /home/venv/bin/pip install --upgrade pip && \
     /home/venv/bin/pip install \
         Cython==3.0.11 \
@@ -59,6 +59,22 @@ RUN /home/venv/bin/pip install --upgrade pip && \
         Deprecated==1.2.16 && \
     /home/venv/bin/pip install histomicstk --find-links https://girder.github.io/large_image_wheels && \
     rm -rf ~/.cache/pip
+
+# Clone the MuTILs_Panoptic repo and switch branches
+# TODO: Update the branch names to the latest fix versions
+RUN git clone https://github.com/szolgyen/MuTILs_Panoptic \
+    && cd MuTILs_Panoptic \
+    && git switch dev-szolgyen-refaq \
+    && git submodule update --init --recursive \
+    && cd histolab \
+    && git switch dev-szolgyen
+
+# Build Cython modules
+RUN cd /home/MuTILs_Panoptic/utils/CythonUtils \
+    && /home/venv/bin/python3 setup.py build_ext --inplace
+
+# Set PYTHONPATH
+ENV PYTHONPATH="/home/MuTILs_Panoptic:/home/MuTILs_Panoptic/histolab/src:$PYTHONPATH"
 
 # Ensure the virtual environment is automatically activated
 RUN echo "source /home/venv/bin/activate" >> /root/.bashrc

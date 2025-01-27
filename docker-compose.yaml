@@ -2,17 +2,16 @@ version: '3'
 
 services:
   mutilsdev:
-    image: mutils:v0
+    image: mutils:v1
     container_name: MutilsDev1
     environment:
       - NVIDIA_VISIBLE_DEVICES=1
-      - PYTHONPATH=${PYTHONPATH}
     ipc: host
     network_mode: host
     volumes:
-      - /home/lit7907/repos/MuTILs_Panoptic:/home/MuTILs_Panoptic
-      - /data:/data
-      - /mnt:/mnt
+      - /your/path/to/the/model/weights:/home/models
+      - /your/path/to/the/input/files:/home/input
+      - /your/path/to/the/output/files:/home/output
     ulimits:
       core: 0
     stdin_open: true
