@@ -92,8 +92,9 @@ Host (recommended)                      Container (default)
 │   └── fold_5                              │   └── fold_5
 │        └── mutils_06022021_fold5.pt       │        └── mutils_06022021_fold5.pt
 ├── input                                   ├── input
-├── output                                  └── output
-└── docker-compose.yaml
+├── output                                  ├── output
+└── docker-compose.yaml                     ├── MuTILs_Panoptic
+                                            └── venv
 ```
 
 ### Model weights
