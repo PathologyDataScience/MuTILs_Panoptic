@@ -22,7 +22,9 @@ Tumor-Infiltrating Lymphocytes (TILs) have strong prognostic and predictive valu
 
 ### Containerized approach
 
-We recommend using the Docker image "szolgyen/mutils:v1" to perform inference with MuTILs It is publicly available from Docker Hub. The image comes with a 22.04 Ubuntu system and an activated Python 3.10.12 virtual environment with all necessary packages for MuTILs. The image is built on [nvidia/cuda:12.0.0-base-ubuntu22.04](https://hub.docker.com/layers/nvidia/cuda/12.0.0-base-ubuntu22.04/images/sha256-3b6f49136ec6725b6fcc0fc04f2f7711d3d1e22d0328da2ca73e52dbd37fa4b1) with 12.0.0 CUDA. For details on dependencies, see the [Dockerfile](https://github.com/szolgyen/MuTILs_Panoptic/blob/dev-szolgyen-refaq/Dockerfile) of this repository.
+We recommend using the <i>szolgyen/mutils:v1</i> image from Docker Hub to perform inference with MuTILs. This image is based on Ubuntu 22.04 and includes a Python 3.10.12 virtual environment preconfigured with all the necessary packages for MuTILs. It is built on [nvidia/cuda:12.0.0-base-ubuntu22.04](https://hub.docker.com/layers/nvidia/cuda/12.0.0-base-ubuntu22.04/images/sha256-3b6f49136ec6725b6fcc0fc04f2f7711d3d1e22d0328da2ca73e52dbd37fa4b1), providing CUDA 12.0.0 compatibility.
+
+For a complete list of dependencies and additional details, refer to the [Dockerfile](https://github.com/szolgyen/MuTILs_Panoptic/blob/main/Dockerfile) in this repository.
 
 #### Pull the docker image on your GPU server:
 

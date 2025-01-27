@@ -60,14 +60,10 @@ RUN /home/venv/bin/pip install --upgrade pip && \
     /home/venv/bin/pip install histomicstk --find-links https://girder.github.io/large_image_wheels && \
     rm -rf ~/.cache/pip
 
-# Clone the MuTILs_Panoptic repo and switch branches
-# TODO: Update the branch names to the latest fix versions
+# Clone the MuTILs_Panoptic repository and histolab submodule
 RUN git clone https://github.com/szolgyen/MuTILs_Panoptic \
     && cd MuTILs_Panoptic \
-    && git switch dev-szolgyen-refaq \
-    && git submodule update --init --recursive \
-    && cd histolab \
-    && git switch dev-szolgyen
+    && git submodule update --init --recursive
 
 # Build Cython modules
 RUN cd /home/MuTILs_Panoptic/utils/CythonUtils \
