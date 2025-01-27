@@ -17,7 +17,8 @@ from MuTILs_Panoptic.utils.MiscRegionUtils import (
     get_objects_from_binmask, get_region_within_x_pixels,
 )
 from MuTILs_Panoptic.utils.GeneralUtils import unique_nonzero
-from MuTILs_Panoptic.histolab.src.histolab.util import np_to_pil
+from MuTILs_Panoptic.utils.CythonUtils import cy_argwhere
+from histolab.util import np_to_pil
 
 
 class MutilsInferenceRunner(object):
@@ -312,7 +313,7 @@ class MutilsInferenceRunner(object):
         """Remove objects with a side less then min. Important!"""
         new_objcodes = objcodes.copy()
         for obc in objcodes:
-            yx = np.argwhere(objmask == obc)
+            yx = cy_argwhere.cy_argwhere2d(objmask == obc)
             if yx.shape[0] < self.min_nucl_size ** 2:
                 objmask[yx[:, 0], yx[:, 1]] = 0
                 new_objcodes.remove(obc)
@@ -392,7 +393,7 @@ class MutilsInferenceRunner(object):
         probvectors = DataFrame(0., index=objcodes, columns=lbls)
         for obc in objcodes:
 
-            yx = np.argwhere(objmask == obc)
+            yx = cy_argwhere.cy_argwhere2d(objmask == obc)
 
             if yx.shape[0] < 1:
                 continue

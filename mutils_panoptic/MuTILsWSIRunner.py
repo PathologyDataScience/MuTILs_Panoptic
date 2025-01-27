@@ -16,12 +16,12 @@ from histomicstk.preprocessing.color_deconvolution import (
     color_deconvolution_routine)
 
 # histolab modules
-from MuTILs_Panoptic.histolab.src.histolab.slide import Slide, SlideSet
-from MuTILs_Panoptic.histolab.src.histolab.tile import Tile
-from MuTILs_Panoptic.histolab.src.histolab.tiler import ScoreTiler
-from MuTILs_Panoptic.histolab.src.histolab.types import CoordinatePair
-from MuTILs_Panoptic.histolab.src.histolab.masks import BiggestTissueBoxMask
-from MuTILs_Panoptic.histolab.src.histolab.filters.image_filters_functional \
+from histolab.slide import Slide, SlideSet
+from histolab.tile import Tile
+from histolab.tiler import ScoreTiler
+from histolab.types import CoordinatePair
+from histolab.masks import BiggestTissueBoxMask
+from histolab.filters.image_filters_functional \
     import rag_threshold
 
 # mutils
@@ -79,6 +79,9 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
             # misc params
             valid_extensions=None,
             logger=None,
+            COHORT=None,
+            N_SUBSETS=None,
+            restrict_to_vta=False,
             # intra-tumoral stroma (saliency)
             filter_stromal_whitespace=False,
             min_tumor_for_saliency=4,
@@ -177,6 +180,7 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
                 '.svs',  # TCGA
                 '.scn',  # CPS cohorts
                 '.ndpi',  # new cps scans
+                '.mrxs',  # NHS breast
             ],
             keep_slides=keep_slides,
             reverse=self._reverse,
@@ -1348,7 +1352,7 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
 
 if __name__ == "__main__":
 
-    from MuTILs_Panoptic.configs.MuTILsWSIRunConfigs import BaseConfigs, RunConfigs
+    from MuTILs_Panoptic.configs.MuTILsWSIRunConfigs import RunConfigs
     import argparse
 
     parser = argparse.ArgumentParser(description='Run MuTILsWSI model.')
@@ -1356,21 +1360,29 @@ if __name__ == "__main__":
     parser.add_argument('-r', '--reverse', type=int, default=0)
     ARGS = parser.parse_args()
 
+    RunConfigs.initialize()
+
     for subset in ARGS.subsets:
 
+        logging.info('Entered the for loop with param: %s out of %s subsets', subset, ARGS.subsets)
+
+        monitor = (
+                f"{'(DEBUG)' if RunConfigs.RUN_KWARGS['_debug'] else ''}"
+                f"{RunConfigs.RUN_KWARGS['COHORT']}: SUBSET {subset} "
+                f"{'(reverse)' if ARGS.reverse else ''}"
+                ": "
+            )
+
         SLIDENAMES = RunConfigs.SLIDENAMES[subset]
+
         if ARGS.reverse:
             SLIDENAMES.reverse()
 
         runner = MuTILsWSIRunner(
             **RunConfigs.RUN_KWARGS,
-            monitor=(
-                f"{'(DEBUG)' if BaseConfigs.DEBUG else ''}"
-                f"{BaseConfigs.COHORT}: SUBSET {subset} "
-                f"{'(reverse)' if ARGS.reverse else ''}"
-                ": "
-            ),
+            monitor=monitor,
             keep_slides=SLIDENAMES,
             _reverse=bool(ARGS.reverse)
         )
+
         runner.run_all_slides()
