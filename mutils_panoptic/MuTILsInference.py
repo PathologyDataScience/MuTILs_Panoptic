@@ -18,7 +18,7 @@ from MuTILs_Panoptic.utils.MiscRegionUtils import (
 )
 from MuTILs_Panoptic.utils.GeneralUtils import unique_nonzero
 from MuTILs_Panoptic.utils.CythonUtils import cy_argwhere
-from MuTILs_Panoptic.histolab.src.histolab.util import np_to_pil
+from histolab.util import np_to_pil
 
 
 class MutilsInferenceRunner(object):

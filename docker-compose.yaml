@@ -1,0 +1,19 @@
+version: '3'
+
+services:
+  mutilsdev:
+    image: szolgyen/mutils:v1
+    container_name: MutilsInference
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=1
+    ipc: host
+    network_mode: host
+    volumes:
+      - /your/path/to/the/model/weights:/home/models
+      - /your/path/to/the/input/files:/home/input
+      - /your/path/to/the/output/files:/home/output
+    ulimits:
+      core: 0
+    stdin_open: true
+    tty: true
+    restart: "no"
