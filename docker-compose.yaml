@@ -2,7 +2,7 @@ version: '3'
 
 services:
   mutilsdev:
-    image: mutils:v1
+    image: szolgyen/mutils:v1
     container_name: MutilsInference
     environment:
       - NVIDIA_VISIBLE_DEVICES=1
