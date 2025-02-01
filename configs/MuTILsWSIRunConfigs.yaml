@@ -4,23 +4,24 @@
 model_configs: 'panoptic_model_configs.py'
 
 ## ----------------------------------------------------------------
-# Input paths
+# Input paths - fixed
+# mount the container to these paths in the docker compose yaml file
 ## ----------------------------------------------------------------
-slides_path: '/path/to/the/slides/directory'
-base_savedir: '/path/to/the/output/directory'
+slides_path: '/home/input'
+base_savedir: '/home/output'
 
 model_paths:
-  mutils_06022021-fold1: '/path/to/the/mutils/model/weights/fold_1/mutils_06022021_fold1.pt'
-  mutils_06022021-fold2: '/path/to/the/mutils/model/weights/fold_2/mutils_06022021_fold2.pt'
-  mutils_06022021-fold3: '/path/to/the/mutils/model/weights/fold_3/mutils_06022021_fold3.pt'
-  mutils_06022021-fold4: '/path/to/the/mutils/model/weights/fold_4/mutils_06022021_fold4.pt'
-  mutils_06022021-fold5: '/path/to/the/mutils/model/weights/fold_5/mutils_06022021_fold5.pt'
+  mutils_06022021-fold1: '/home/models/fold_1/mutils_06022021_fold1.pt'
+  mutils_06022021-fold2: '/home/models/fold_2/mutils_06022021_fold2.pt'
+  mutils_06022021-fold3: '/home/models/fold_3/mutils_06022021_fold3.pt'
+  mutils_06022021-fold4: '/home/models/fold_4/mutils_06022021_fold4.pt'
+  mutils_06022021-fold5: '/home/models/fold_5/mutils_06022021_fold5.pt'
 
 ## ----------------------------------------------------------------
 # Output saving options
 ## ----------------------------------------------------------------
 save_wsi_mask: True
-save_annotations: False
+save_annotations: True
 save_nuclei_meta: True
 save_nuclei_props: True
 
@@ -28,12 +29,7 @@ save_nuclei_props: True
 # Cohort options
 ## ----------------------------------------------------------------
 restrict_to_vta: False
-COHORT: 'Name_of_your_custom_cohort'
-# COHORT: 'CPSII_40X'
-# COHORT: 'TCGA_BRCA'
-# COHORT: 'CPS3_40X'
-# COHORT: 'plco_breast'
-# COHORT: 'NHS_breast'
+COHORT: 'unknown'
 
 ## ----------------------------------------------------------------
 # Inference configurations
@@ -75,30 +71,6 @@ topk_salient_rois: null
 
 gcpaths: null
 vlres_scorer_kws: null
-
-## ----------------------------------------------------------------
-## Use the following parameters to run the Grand challenge pipeline
-## ----------------------------------------------------------------
-# grandch: True
-# topk_rois: 300
-# topk_rois_sampling_mode: "weighted"
-# topk_salient_rois: 300
-
-# gcpaths:
-#   roilocs_in: '/path/to/regions-of-interest.json'
-#   cta2vta: '/path/to/Calibrations.json'
-#   roilocs_out: '/path/to/regions-of-interest.json'
-#   result_file: '/path/to/results.json'
-#   tilscore_file: '/path/to/til-score.json'
-#   detect_file: '/path/to/detected-lymphocytes.json'
-#   wsi_mask: '/path/to/images/segmented-stroma'
-# vlres_scorer_kws:
 #   check_tissue: True
 #   tissue_percent: 25
 #   pixel_overlap: 0
-
-## ----------------------------------------------------------------
-## Use cohort specific parameters if running TCGA_BRCA or CPS3_40X
-## ----------------------------------------------------------------
-# data_file_path: '/path/to/tcga-clinical/PRIVATE_RSalgado_TCGA_TILScores.csv'
-# data_file_path: '/path/to/acs-clinical/CPSII_BRCA_FacilityIDs_20210331.csv'

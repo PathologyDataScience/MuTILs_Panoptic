@@ -206,7 +206,7 @@ def get_objects_from_binmask(
     # binary opening helps isolate touching objects
     if open_first:
         binmask = binary_opening(
-            binmask, selem=selem if selem is not None else np.ones((5, 5))
+            binmask, footprint=selem if selem is not None else np.ones((5, 5))
         )
 
     # watershed also helps isolate touching objects
@@ -278,7 +278,7 @@ def get_region_within_x_pixels(
     """
     # open to remove small objects
     if min_ref_pixels is not None:
-        center_mask = binary_opening(center_mask, selem=disk(min_ref_pixels))
+        center_mask = binary_opening(center_mask, footprint=disk(min_ref_pixels))
     # find proximity of each pixel from center regions (our reference)
     shape = center_mask.shape
     maxd = np.sqrt(np.sum([side ** 2 for side in shape]))
