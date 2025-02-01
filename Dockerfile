@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     vim \
     screen \
     tree \
+    rsync \
     git \
     ca-certificates \
     software-properties-common \
