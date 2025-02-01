@@ -20,10 +20,10 @@ model_paths:
 ## ----------------------------------------------------------------
 # Output saving options
 ## ----------------------------------------------------------------
-save_wsi_mask: False
-save_annotations: False
-save_nuclei_meta: False
-save_nuclei_props: False
+save_wsi_mask: True
+save_annotations: True
+save_nuclei_meta: True
+save_nuclei_props: True
 
 ## ----------------------------------------------------------------
 # Cohort options
