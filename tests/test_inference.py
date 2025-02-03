@@ -18,27 +18,30 @@ class FileCopier:
             slide (str): Path to the slide file.
         """
         print("Copying slide to the input folder...")
-        rsync_mrxs = [
+        rsync_slide = [
             "rsync",
             "--info=progress2",
             slide,
             "/home/input/."
         ]
-        subprocess.run(rsync_mrxs, check=True)
+        subprocess.run(rsync_slide, check=True)
 
-        slide_name = os.path.splitext(os.path.basename(slide))[0]
-        subprocess.run(["mkdir", "-p", f"/home/input/{slide_name}"])
+        # If MRXS slide, copy the accompanying files
+        if slide.endswith(".mrxs"):
 
-        slide_folder = slide.split('.')[0]
+            slide_name = os.path.splitext(os.path.basename(slide))[0]
+            subprocess.run(["mkdir", "-p", f"/home/input/{slide_name}"])
 
-        rsync_files = [
-            "rsync",
-            "--info=progress2",
-            "-r",
-            slide_folder+"/.",
-            f"/home/input/{slide_name}/."
-        ]
-        subprocess.run(rsync_files, check=True)
+            slide_folder = slide.split('.')[0]
+
+            rsync_files = [
+                "rsync",
+                "--info=progress2",
+                "-r",
+                slide_folder+"/.",
+                f"/home/input/{slide_name}/."
+            ]
+            subprocess.run(rsync_files, check=True)
 
         chmod = [
             "chmod",

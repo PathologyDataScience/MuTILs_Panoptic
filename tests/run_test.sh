@@ -10,7 +10,7 @@ SLIDE_BASE_DIR=$(echo $slide_path | cut -d'/' -f1,2)
 MODELS_BASE_DIR=$(echo $models_path | cut -d'/' -f1,2)
 
 docker run \
-    --name MutilsDev \
+    --name MutilsTest \
     --rm \
     -it \
     -v $BASE_DIR/MuTILs_Panoptic:/home/MuTILs_Panoptic \
