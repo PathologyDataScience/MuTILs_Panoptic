@@ -79,9 +79,7 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
             # misc params
             valid_extensions=None,
             logger=None,
-            COHORT=None,
             N_SUBSETS=None,
-            restrict_to_vta=False,
             # intra-tumoral stroma (saliency)
             filter_stromal_whitespace=False,
             min_tumor_for_saliency=4,
@@ -1076,7 +1074,7 @@ if __name__ == "__main__":
 
         monitor = (
                 f"{'(DEBUG)' if RunConfigs.RUN_KWARGS['_debug'] else ''}"
-                f"{RunConfigs.RUN_KWARGS['COHORT']}: SUBSET {subset} "
+                f"SUBSET: {subset}"
                 f"{'(reverse)' if ARGS.reverse else ''}"
                 ": "
             )
