@@ -599,7 +599,7 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
         }
         df = classif_df.loc[:, list(colmap.keys())].copy()
         df.rename(columns=colmap, inplace=True)
-        df.loc[:, ['x', 'y']] *= self.hres_mpp / self._slide.base_mpp
+        df[['x', 'y']] = df[['x', 'y']].astype(float) * (self.hres_mpp / self._slide.base_mpp)
         df.loc[:, 'x'] += left
         df.loc[:, 'y'] += top
 
