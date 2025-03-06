@@ -64,12 +64,10 @@ _debug: True
 ## ----------------------------------------------------------------
 ## Use the following parameters to run the full cTME pipeline
 ## ----------------------------------------------------------------
-grandch: False
 topk_rois: null
 topk_rois_sampling_mode: "stratified"
 topk_salient_rois: null
 
-gcpaths: null
 vlres_scorer_kws: null
 #   check_tissue: True
 #   tissue_percent: 25
