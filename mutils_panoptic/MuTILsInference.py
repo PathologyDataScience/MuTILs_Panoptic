@@ -383,30 +383,24 @@ class MutilsInferenceRunner(object):
         if objcodes is None:
             objcodes = np.array(unique_nonzero(objmask))
 
-        # we'll assign everything to this dataframe
-        outdf = DataFrame(index=objcodes)
-        outdf.loc[:, 'Identifier.ObjectCode'] = objcodes
+        num_classes = semprobs.shape[0]
+        lbls = np.arange(1, num_classes + 1)
 
-        # This array holds the aggregated probability from pixels belonging to
-        # each nucleus (rows) for each class (columns)
-        lbls = np.arange(1, semprobs.shape[0] + 1)
-        probvectors = DataFrame(0., index=objcodes, columns=lbls)
-        for obc in objcodes:
+        # Dictionary-based storage instead of DataFrame
+        results = {obc: {} for obc in objcodes}
+        probvectors = np.zeros((len(objcodes), num_classes))
 
+        for i, obc in enumerate(objcodes):
             yx = cy_argwhere.cy_argwhere2d(objmask == obc)
 
             if yx.shape[0] < 1:
                 continue
 
-            probvectors.loc[obc, :] = semprobs[:, yx[:, 0], yx[:, 1]].mean(1)
+            probvectors[i, :] = semprobs[:, yx[:, 0], yx[:, 1]].mean(axis=1)
 
             # While we're at it, let's assign the nucleus coordinates
             ymin, xmin = yx.min(0)
             ymax, xmax = yx.max(0)
-            outdf.loc[obc, 'Identifier.Xmin'] = xmin
-            outdf.loc[obc, 'Identifier.Ymin'] = ymin
-            outdf.loc[obc, 'Identifier.Xmax'] = xmax
-            outdf.loc[obc, 'Identifier.Ymax'] = ymax
 
             # IMPORTANT NOTE:
             #  The centroid here is critical, because we use it
@@ -421,40 +415,51 @@ class MutilsInferenceRunner(object):
             #  will contain the code for the nucleus of interest.
             #
             cy, cx = np.int32(yx.mean(0))
-            outdf.loc[obc, 'Identifier.CentroidX'] = cx
-            outdf.loc[obc, 'Identifier.CentroidY'] = cy
             objmask[cy, cx] = obc
+
+            results[obc] = {
+                'Identifier.ObjectCode': obc,
+                'Identifier.Xmin': xmin,
+                'Identifier.Ymin': ymin,
+                'Identifier.Xmax': xmax,
+                'Identifier.Ymax': ymax,
+                'Identifier.CentroidX': cx,
+                'Identifier.CentroidY': cy
+            }
 
         # maybe aggregate superclass probabilities
         super_probvectors = None
         if aggsuper:
-            slbls = np.arange(1, max(class2supercode.values()) + 1)
-            super_probvectors = DataFrame(0., index=objcodes, columns=slbls)
+            num_super_classes = max(class2supercode.values())
+            super_probvectors = np.zeros((len(objcodes), num_super_classes))
             for lbl, slbl in class2supercode.items():
-                super_probvectors.loc[:, slbl] += probvectors.loc[:, lbl]
+                super_probvectors[:, slbl - 1] += probvectors[:, lbl - 1]
 
-        # more informative column names
-        probvectors.columns = [
-            f"ClassifProbab.{code2name[lbl]}" for lbl in probvectors.columns]
-        if aggsuper:
-            super_probvectors.columns = [
-                f"SuperClassifProbab.{supercode2name[slbl]}"
-                for slbl in super_probvectors.columns]
+        # Compute argmax classifications
+        argmaxed_class = np.argmax(probvectors, axis=1) + 1
+        argmaxed_class_names = np.vectorize(code2name.get)(argmaxed_class)
 
-        # argmaxed final classification
-        argmaxed_class = Series(
-            np.argmax(probvectors.values, 1) + 1,
-            index=probvectors.index).map(code2name)
         argmaxed_superclass = None
         if aggsuper:
-            argmaxed_superclass = Series(
-                np.argmax(super_probvectors.values, 1) + 1,
-                index=super_probvectors.index).map(supercode2name)
+            argmaxed_superclass = np.argmax(super_probvectors, axis=1) + 1
+            argmaxed_superclass = np.vectorize(supercode2name.get)(argmaxed_superclass)
 
-        # assign to final dataframe
-        outdf.loc[:, 'Classif.StandardClass'] = argmaxed_class
-        outdf.loc[:, 'Classif.SuperClass'] = argmaxed_superclass
-        outdf = concat([outdf, probvectors, super_probvectors], axis=1)
+        # Convert dictionary results to a DataFrame
+        outdf = DataFrame.from_dict(results, orient='index')
+
+        outdf['Classif.StandardClass'] = argmaxed_class_names
+        if aggsuper:
+            outdf['Classif.SuperClass'] = argmaxed_superclass
+
+        # Convert probability vectors to DataFrame
+        prob_df = DataFrame(probvectors, index=objcodes, columns=[f"ClassifProbab.{code2name[lbl]}" for lbl in lbls])
+
+        if aggsuper:
+            super_prob_df = DataFrame(super_probvectors, index=objcodes,
+                                        columns=[f"SuperClassifProbab.{supercode2name[slbl]}" for slbl in range(1, num_super_classes + 1)])
+            outdf = concat([outdf, prob_df, super_prob_df], axis=1)
+        else:
+            outdf = concat([outdf, prob_df], axis=1)
 
         return outdf, objmask
 
