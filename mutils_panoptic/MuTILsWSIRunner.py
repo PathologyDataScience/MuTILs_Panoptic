@@ -92,9 +92,6 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
             min_nucl_size=5,
             max_nucl_size=90,
             nprops_kwargs=None,
-            # for grand challenge platform
-            grandch=False,
-            gcpaths=None,
             # internal
             _debug=False,
             _reverse=False,
@@ -139,12 +136,6 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
             )
         assert topk_rois_sampling_mode in ("stratified", "weighted", "sorted")
         self._topk_rois_sampling_mode = topk_rois_sampling_mode
-
-        # grand-challenge platform
-        self.grandch = grandch
-        self.gcpaths = gcpaths
-        self._cta2vta = None
-        self._grand_challenge_sanity()
 
         # model ensembles
         assert all(os.path.isfile(j) for j in model_paths.values()), \
@@ -325,33 +316,10 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
         """
         self.logger.info(f"{self._slmonitor}: Done, saving results.")
         new_json = True
-        if self.grandch:
-            self._save_single_til_score()
-            if self.gcpaths['result_file'] is not None:
-                write_or_append_json_list(
-                    self._sldmeta, path=self.gcpaths['result_file'])
-                new_json = False
         if new_json:
             save_json(
                 self._sldmeta,
                 path=opj(self._savedir, self._slide.name + '.json'))
-
-    @collect_errors()
-    def _save_single_til_score(self):
-        """
-        Save single til score json for grand-challenge.
-        """
-        metric = 'Mean_nTILsCells2nAllStromaCells'
-        if self._cta2vta is not None:
-            metric = 'Calibrated' + metric
-        where = (
-            self.gcpaths['tilscore_file']
-            if self.gcpaths['tilscore_file'] is not None
-            else opj(self._savedir, 'til-score.json')
-        )
-        score = 100. * self._sldmeta['metrics']['weighted_by_rois'][metric]
-        save_json(score, path=where)
-        self._sldmeta['outputs'].append(str(where))
 
     @collect_errors()
     def _maybe_concat_wsi_mask(self):
@@ -361,10 +329,7 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
         if not self.save_wsi_mask:
             return
 
-        if self.grandch:
-            where = self.gcpaths['wsi_mask'] or self._savedir
-        else:
-            where = self._savedir
+        where = self._savedir
         savename = opj(where, self._slide.name + '.tif')
 
         # if exists, dont overwrite!!
@@ -376,10 +341,9 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
         wsimask = self._init_wsi_mask()
         # Read tiles and append to mask
         self.logger.info(f"{self._slmonitor}: Insterting tiles to WSI mask.")
-        mpp = self.lres_mpp if self.grandch else self.hres_mpp
-        sf = self._slide.base_mpp / mpp
+        sf = self._slide.base_mpp / self.hres_mpp
         mask_paths = glob(opj(self._savedir, 'roiMasks', '*.png'))
-        for midx, mpath in enumerate(mask_paths):
+        for _, mpath in enumerate(mask_paths):
             self._rid = int(mpath.split('_roi-')[-1].split('_')[0])
             left, top, _, _ = [int(j * sf) for j in self._roicoords]
             mtile = pyvips.Image.new_from_file(mpath, access="sequential")
@@ -387,7 +351,7 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
                                      background=0)
         # save result
         self.logger.info(f"{self._slmonitor}: Saving WSI mask.")
-        pixel_per_mm = 1 / (1e-3 * mpp)
+        pixel_per_mm = 1 / (1e-3 * self.hres_mpp)
         wsimask.tiffsave(
             savename,
             tile=True, tile_width=512, tile_height=512, pyramid=True,
@@ -412,12 +376,9 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
         # and: https://github.com/libvips/pyvips/issues/164
         # and: https://github.com/libvips/pyvips/issues/40
         thumb_mask = np.zeros(shape, dtype=np.uint8)
-        if self.grandch:
-            # grand challenge mask is low res stromal regions
-            sf1 = self._slide.base_mpp / self.lres_mpp
-        else:
-            # analysis is done at level of hpfs and mask includes nuclei
-            sf1 = self._slide.base_mpp / self.hres_mpp
+
+        # analysis is done at level of hpfs and mask includes nuclei
+        sf1 = self._slide.base_mpp / self.hres_mpp
         wsimask = numpy2vips(thumb_mask)
         # resize to desired level
         to_width, to_height = [sf1 * j for j in self._slide.dimensions]
@@ -445,12 +406,6 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
         _, nmetrics = self._nuclei_metrics(
             n_counts, rst_count=r_pixsums['pixelCount_AnyStroma'])
         metrics.update(nmetrics)
-
-        # calibrate to vta range
-        if self._cta2vta is not None:
-            metrics.update(
-                self._calibrate_metrics(metrics, pfx='CTA.Global_')
-            )
 
         return metrics
 
@@ -484,57 +439,7 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
         summ.update({f'Mean_{k}': v for k, v in means.items()})
         summ.update({f'Std_{k}': v for k, v in stds.items()})
 
-        # calibrate to vta range
-        if self._cta2vta is not None:
-            summ.update(
-                self._calibrate_metrics(summ, pfx='CTA.SaliencyWtdMean_')
-            )
-
         return summ
-
-    @collect_errors()
-    def _calibrate_metrics(self, cta: dict, pfx=''):
-        """
-        Calibrate computational to visual TILs assessment scores.
-        """
-
-        def strip(metric):
-            return metric.replace('Mean_', '').replace('Std_', '')
-
-        return {
-            f"Calibrated{metric}":
-                val * self._cta2vta[f"{pfx}{strip(metric)}"]["slope"]
-            for metric, val in cta.items()
-            if f"{pfx}{strip(metric)}" in self._cta2vta
-        }
-
-    @collect_errors()
-    def _maybe_fix_wsi_tilslocs_gch_style(self):
-        """
-        Fix and save slide-level TILs location detections.
-        """
-        where = opj(self._savedir, 'tmp_tilsLocs.json')
-        if not os.path.isfile(where):
-            return
-
-        tils_wsi = {
-            'name': self._sldname,
-            'version': {'major': 1, 'minor': 0},
-            'type': 'Multiple points',
-            'points': [],
-        }
-        tmplocs = load_json(where)
-        for locs in tmplocs:
-            tils_wsi['points'].extend(locs['tmp'])
-        path = (
-            opj(self._savedir, 'annotations', 'detected-lymphocytes.json')
-            if self.gcpaths['detect_file'] is None
-            else self.gcpaths['detect_file']
-        )
-        save_json(tils_wsi, path=path)
-        self._sldmeta['outputs'].append(str(self.gcpaths['detect_file']))
-        if not self._debug:
-            os.remove(where)
 
     def _summarize_roi(self, preds):
         """
@@ -663,7 +568,7 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
     def _maybe_save_roi_preds(self, rgb, preds):
         """Save masks, metadata, etc."""
         if self.save_wsi_mask:
-            mask = self._maybe_binarize_roi_mask(preds['combined_mask'].copy())
+            mask = preds['combined_mask'].copy()
             imwrite(
                 opj(self._savedir, 'roiMasks', self._roiname + '.png'), mask
             )
@@ -675,25 +580,6 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
             )
         self._maybe_save_nuclei_props(rgb=rgb, preds=preds)
         self._maybe_save_nuclei_annotation(preds['classif_df'])
-
-    def _maybe_binarize_roi_mask(self, mask):
-        """
-        If grand challenge, binarize region stromal mask.
-        """
-        if not self.grandch:
-            return mask
-
-        # binarize regions (stroma vs else)
-        shape = mask.shape[:2]
-        mask = np.in1d(
-            mask[..., 0], [self.rcd['STROMA'], self.rcd['TILS']])
-        mask = Image.fromarray(mask.reshape(shape))
-        # resize to lres
-        mask = mask.resize(
-            (self.roi_side_lres, self.roi_side_lres), Image.NEAREST)
-        mask = np.array(mask, dtype=np.uint8)
-
-        return mask
 
     @collect_errors()
     def _maybe_save_nuclei_annotation(self, classif_df):
@@ -716,12 +602,8 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
         df.loc[:, ['x', 'y']] *= self.hres_mpp / self._slide.base_mpp
         df.loc[:, 'x'] += left
         df.loc[:, 'y'] += top
-        # parse to preferred style
-        if self.grandch:
-            istils = df.loc[:, 'SuperClass'] == 'TILsSuperclass'
-            self._save_tilslocs_gch_style(df.loc[istils, ['x', 'y']])
-        else:
-            self._save_nuclei_locs_hui_style(df)
+
+        self._save_nuclei_locs_hui_style(df)
 
     def _save_nuclei_locs_hui_style(self, df):
         """Save nuclei centroids annotation HistomicsUI style."""
@@ -768,39 +650,6 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
 
         return records
 
-    def _save_tilslocs_gch_style(self, tils):
-        """Save temporary TILs location annotation (fixed for wsi at end)."""
-        tils = self._df_to_points_list_gch_style(tils)
-        write_or_append_json_list(
-            {'tmp': tils}, path=opj(self._savedir, 'tmp_tilsLocs.json'))
-
-    @staticmethod
-    def _df_to_points_list_gch_style(df):
-        """
-        Parse TILs score datafram to a list of Points dicts, in accordance
-        with the grandchallenge platform schema:
-          https://github.com/comic/grand-challenge.org/blob/ ...
-          90d825737065aa2b4df4344d5fe4c0646472dc87/app/grandchallenge/ ...
-          reader_studies/models.py#L979-L991
-
-        This implementation is specifically made to avoid doing a python
-        loop over each row, and instead relies on pandas ops which are more
-        efficient.
-        """
-        # handle if no TILs in ROI
-        if df.shape[0] < 1:
-            return []
-
-        # Multiple Points object is a list of Points objects
-        df = df.astype(int).astype(str)
-        df.loc[:, 'pre'] = "{'point':["
-        df.loc[:, 'post'] = ", 0]}"
-        records = df.loc[:, 'pre'] \
-                  + df.loc[:, 'x'] + ", " + df.loc[:, 'y'] + df.loc[:, 'post']
-        records = records.apply(lambda x: ast.literal_eval(x)).to_list()
-
-        return records
-
     @collect_errors()
     def _maybe_save_nuclei_props(self, rgb, preds):
         """Get and save nuclear morphometric features."""
@@ -820,7 +669,7 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
         if not self._debug:
             return
 
-        fig, ax = plt.subplots(1, 2, figsize=(7. * 2, 7.))
+        _, ax = plt.subplots(1, 2, figsize=(7. * 2, 7.))
         ax[0].imshow(rgb)
         ax[0].imshow(
             np.ma.masked_array(sstroma, mask=~sstroma), alpha=0.3,
@@ -882,7 +731,6 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
             self.run_single_model()
 
         collect_errors.monitor = self._slmonitor
-        self._maybe_fix_wsi_tilslocs_gch_style()
 
     def _assign_rois_to_models(self):
         """
@@ -892,22 +740,7 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
         # get topk rois, stratified by superpixel in vlres adjacency image
         df = self._assign_rois_to_rag()
         top_idxs = self._pick_topk_rois_from_rag(df)
-        if self.grandch:
-            # Stratified grid-like assignment of rois to models
-            # -> Multiple models can be assigned to the same "superpixel"
-            # This is a good arrangement when you don't care about "fusing"
-            # the mask from multiple adjacent tiles and you only care about
-            # each tile independently (eg. TIL score frome each tile)
-            df.loc[top_idxs, 'model'] = [
-                i % self.n_models for i in range(len(top_idxs))]
-        else:
-            # Smart assignment based on region adjacency to reduce edge artif.
-            # (eg model overcalling tumor vs another overcalling stroma)
-            # -> Each "superpixel" gets only one model assigned to it
-            # This is a good arrangement when you care about fusing the mask
-            # from multiple tiles to get whole-slide region polygons for
-            # research assessment
-            df.loc[top_idxs, 'model'] = df.loc[:, 'rag'] % self.n_models
+        df.loc[top_idxs, 'model'] = df.loc[:, 'rag'] % self.n_models
 
         return df
 
@@ -1071,37 +904,8 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
         if not self.save_annotations:
             return
 
-        savenames = (
-            self._save_roilocs_gch_style() if self.grandch
-            else self._save_roilocs_hui_style(model_rois)
-        )
+        savenames = (self._save_roilocs_hui_style(model_rois))
         self._sldmeta['outputs'].extend([str(j) for j in savenames])
-
-    def _save_roilocs_gch_style(self):
-        """
-        Grand-challenge compatible roi locations annotation.
-        """
-        roiboxes = {
-            'version': {'major': 1, 'minor': 0},
-            'type': 'Multiple 2D bounding boxes',
-            'boxes': [
-                {
-                    "name": "%.4f" % score,
-                    "corners": [
-                        [int(rloc.x_ul), int(rloc.y_ul), 0],
-                        [int(rloc.x_br), int(rloc.y_ul), 0],
-                        [int(rloc.x_br), int(rloc.y_br), 0],
-                        [int(rloc.x_ul), int(rloc.y_br), 0],
-                    ],
-                }
-                for (score, rloc) in self._top_rois
-            ],
-        }
-        path = self.gcpaths['roilocs_out'] or opj(
-            self._savedir, 'annotations', f'roisLocs.json')
-        save_json(roiboxes, path=path)
-
-        return [path]
 
     @staticmethod
     def _huicolor(col):
@@ -1175,8 +979,6 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
         self._top_rois = roi_extractor.extract(
             slide=self._slide, save_tiles=False,
             monitor=self._slmonitor, logfreq=256)
-        # maybe append prespecified roi locations (grand-challenge)
-        self._maybe_append_roilocs_from_m2db()
         # assign to various models for ensembling
         roi_df = self._assign_rois_to_models()
         self._save_roi_assignment(report_path, roi_df=roi_df)
@@ -1187,39 +989,10 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
         return roi_models
 
     @collect_errors()
-    def _maybe_append_roilocs_from_m2db(self):
-        """
-        Maybe get ROI locations to analyse from prespecified file.
-        This is used by grand challenge organizers to make sure some
-        parts of the slide are analyzed to be able to assess the stromal
-        mask.
-        """
-        if not self.grandch:
-            return
-
-        fpath = self.gcpaths['roilocs_in']
-        if (fpath is None) or (not os.path.isfile(fpath)):
-            return
-
-        self.logger.info(
-            f"{self._slmonitor}: Appending prespecified roi locations.")
-        roiboxes = load_json(fpath)
-        for box in roiboxes['boxes']:
-            corners = box['corners']
-            cpair = CoordinatePair(
-                corners[0][0], corners[0][1],  # xmin, ymin
-                corners[2][0], corners[2][1],  # xmax, ymax
-            )
-            self._top_rois.append((-1, cpair))
-
-    @collect_errors()
     def _maybe_vis_roilocs(self, extractor: ScoreTiler, models):
         """
         Visualize ROI locations.
         """
-        if self.grandch and not self._debug:
-            return
-
         self.logger.info(f"{self._slmonitor}: visualizing roi locations.")
         unique_colors = np.array(plt.get_cmap('tab10').colors)
         colors = unique_colors[models + 1]
@@ -1256,11 +1029,6 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
     def _create_slide_dirs(self):
         """"""
         has_annots = self.save_annotations
-        if self.grandch:
-            has_annots = has_annots and any(
-                self.gcpaths[k] is None
-                for k in ('roilocs_out', 'detect_file')
-            )
         for condition, dirname in (
                 (True, 'roiMeta'),
                 (self.save_wsi_mask, 'roiMasks'),
@@ -1285,66 +1053,6 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
             'error_messages': collect_errors.msgs,
             'outputs': [],
         }
-
-    def _grand_challenge_sanity(self):
-        """
-        Warnings, sanity checks etc for grand-challenge platform.
-        """
-        # maybe we're not on grand-challenge
-        if not self.grandch:
-            return
-
-        # no need for nuclei metadata if grand challenge
-        self.save_nuclei_meta = False
-        self.save_nuclei_props = False
-
-        # assign defaults
-        in_paths = [
-            'roilocs_in',  # needed ROI locations (input)
-            'cta2vta',  # linear calibration from CTA to VTA
-        ]
-        out_paths = [
-            'roilocs_out',  # slide ROI locations (output)
-            'result_file',  # slide metrics
-            'tilscore_file',  # slide float tils score
-            'detect_file',  # slide tils detections
-            'wsi_mask',  # slide mask
-        ]
-        inout_paths = in_paths + out_paths
-        self.gcpaths = self.gcpaths or {}
-        for k in inout_paths:
-            if k not in self.gcpaths:
-                self.gcpaths[k] = None
-
-        # sanity
-        if any(j is not None for j in ['roilocs_out', 'detect_file']):
-            self.save_annotations = True
-        if self.gcpaths['wsi_mask'] is not None:
-            os.makedirs(self.gcpaths['wsi_mask'], exist_ok=True)
-        if self.gcpaths['cta2vta'] is not None:
-            self._cta2vta = load_json(self.gcpaths['cta2vta'])
-
-        # warnings
-        warnings.warn(
-            "This assumes that only ONE slide is run at a time "
-            "as the grand-challenge platform does and REQUIRES. "
-            "The following files will be OVERWRITTEN for each "
-            f"slide being run!: "
-            f"{[v for k, v in self.gcpaths.items() if k in out_paths]}"
-        )
-        warnings.warn(
-            "** IMPORTANT NOTE **: "
-            "Gr. challenge expects a binary WSI mask (1=stroma, 0=else). "
-            "This binarization completely ignores the concept of areas "
-            "not analysed! Zero here could either mean the region was not "
-            "analysed by the algorithm or it is analysed and determined "
-            "not to be stroma! We discussed this with the challenge "
-            "organizers and they said they still prefer a binary mask "
-            "and they'd only calculate the DICE metrics for the regions "
-            "within the slide that they know there is algorithmic output, "
-            "by definition, since they'd prespecify ROI locations for "
-            "segmentation."
-        )
 
 
 # =============================================================================
