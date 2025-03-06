@@ -11,6 +11,7 @@ MODELS_BASE_DIR=$(echo $models_path | cut -d'/' -f1,2)
 
 docker run \
     --name MutilsTest \
+    --gpus '"device=3,4,5,6,7"' \
     --rm \
     -it \
     -v $BASE_DIR/MuTILs_Panoptic:/home/MuTILs_Panoptic \
