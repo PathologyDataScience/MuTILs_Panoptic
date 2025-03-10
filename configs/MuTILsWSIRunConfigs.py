@@ -1,6 +1,5 @@
 import os
 from os.path import join as opj
-from pandas import read_csv
 import yaml
 
 from MuTILs_Panoptic.utils.MiscRegionUtils import get_configured_logger, load_region_configs
@@ -62,7 +61,7 @@ class ConfigParser:
         Raises:
             KeyError: If any of the required configuration values are not set in the config file.
         """
-        required_keys = ['_debug', 'N_SUBSETS', 'slides_path', 'base_savedir', 'model_paths',
+        required_keys = ['_debug', 'N_CPUs', 'N_SUBSETS', 'slides_path', 'base_savedir', 'model_paths',
                          'model_configs', 'save_wsi_mask', 'save_annotations',
                          'save_nuclei_meta', 'save_nuclei_props', 'roi_side_hres', 'discard_edge_hres',
                          'topk_rois', 'topk_rois_sampling_mode',
