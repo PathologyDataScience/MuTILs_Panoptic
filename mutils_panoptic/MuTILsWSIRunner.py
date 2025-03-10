@@ -2,51 +2,43 @@ import os
 from os.path import join as opj
 import numpy as np
 import matplotlib.pylab as plt
-from matplotlib.colors import ListedColormap
 from PIL import Image
 from pandas import DataFrame, read_csv
-from imageio import imwrite
-import warnings
+import torch.multiprocessing as mp
+import torch
 from glob import glob
 import shutil
 import logging
 import pyvips
-import ast
-from histomicstk.preprocessing.color_deconvolution import (
-    color_deconvolution_routine)
+import time
+import argparse
 
-# histolab modules
-from histolab.slide import Slide, SlideSet
+# histolab
+from histolab.slide import SlideSet
 from histolab.tile import Tile
 from histolab.tiler import ScoreTiler
 from histolab.types import CoordinatePair
 from histolab.masks import BiggestTissueBoxMask
-from histolab.filters.image_filters_functional \
-    import rag_threshold
+from histolab.filters.image_filters_functional import rag_threshold
+
+# histomicstk
+from histomicstk.preprocessing.color_deconvolution import color_deconvolution_routine
 
 # mutils
-from MuTILs_Panoptic.mutils_panoptic.MuTILsInference import \
-    MutilsInferenceRunner
+from MuTILs_Panoptic.configs.MuTILsWSIRunConfigs import RunConfigs
+from MuTILs_Panoptic.utils.TorchUtils import transform_dlinput
+from MuTILs_Panoptic.utils.MiscRegionUtils import get_objects_from_binmask, numpy2vips
+from MuTILs_Panoptic.utils.MiscRegionUtils import load_trained_mutils_model
+from MuTILs_Panoptic.mutils_panoptic.MuTILsInference import RoiProcessorConfig, RoiProcessor
 from MuTILs_Panoptic.utils.GeneralUtils import (
-    load_json, save_json, CollectErrors, write_or_append_json_list,
-    _divnonan, weighted_avg_and_std,
-)
-from MuTILs_Panoptic.utils.MiscRegionUtils import (
-    get_objects_from_binmask, summarize_region_mask,
-    summarize_nuclei_mask, numpy2vips,
-)
-from MuTILs_Panoptic.utils.RegionPlottingUtils import (
-    get_visualization_ready_combined_mask as gvcm,
+    load_json, save_json, CollectErrors, _divnonan, weighted_avg_and_std
 )
 
 collect_errors = CollectErrors()
 
-
-# =============================================================================
-
-
-class MuTILsWSIRunner(MutilsInferenceRunner):
-    """"""
+# ==================================================================================================
+class MuTILsWSIRunner:
+    """ Run the MuTILs pipeline for a set of slides. """
 
     def __init__(
             self,
@@ -56,7 +48,6 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
             slides_path: str,
             base_savedir: str,
             *,
-            keep_slides: list = None,
             monitor="",
             # what (not) to save
             save_wsi_mask=True,
@@ -66,10 +57,10 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
             # roi size and scoring
             roi_side_hres=1024,
             discard_edge_hres=0,
-            vlres_scorer_kws=None,
             roi_clust_mpp=20.0,  # 0.5x
-            roi_kmeans_kvp=None,
             topk_rois=None,
+            vlres_scorer_kws=None,
+            roi_kmeans_kvp=None,
             topk_rois_sampling_mode="weighted",
             # color normalization & augmentation
             cnorm=True,
@@ -78,8 +69,10 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
             ntta=0, dltransforms=None,
             # misc params
             valid_extensions=None,
+            keep_slides: list = None,
             logger=None,
             N_SUBSETS=None,
+            N_CPUs=1,
             # intra-tumoral stroma (saliency)
             filter_stromal_whitespace=False,
             min_tumor_for_saliency=4,
@@ -93,54 +86,71 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
             # internal
             _debug=False,
             _reverse=False,
-    ):
-        super().__init__(
-            model_configs=model_configs,
-            roi_side_hres=roi_side_hres,
-            discard_edge_hres=discard_edge_hres,
-            cnorm=cnorm,
-            cnorm_kwargs=cnorm_kwargs,
-            ntta=ntta,
-            dltransforms=dltransforms,
-            no_watershed_nucleus_classes=no_watershed_nucleus_classes,
-            maskout_regions_for_cnorm=maskout_regions_for_cnorm,
-            filter_stromal_whitespace=filter_stromal_whitespace,
-            min_tumor_for_saliency=min_tumor_for_saliency,
-            max_salient_stroma_distance=max_salient_stroma_distance,
-            min_nucl_size=min_nucl_size,
-            max_nucl_size=max_nucl_size,
-            nprops_kwargs=nprops_kwargs,
-            _debug=_debug,
-        )
-
-        self.logger = logger or logging.getLogger(__name__)
-        collect_errors.logger = self.logger
-        collect_errors._debug = self._debug
-
+        ):
+        # paths
+        self.model_configs = model_configs
+        self.model_paths = model_paths
+        self.slides_path = slides_path
         self.base_savedir = opj(base_savedir, 'perSlideResults')
         os.makedirs(self.base_savedir, exist_ok=True)
+        # what (not) to save
         self._monitor = monitor
         self.save_wsi_mask = save_wsi_mask
         self.save_annotations = save_annotations
         self.save_nuclei_meta = save_nuclei_meta
         self.save_nuclei_props = save_nuclei_props
+        # slides to analyse
+        self._reverse = _reverse
+        self.slides = SlideSet(
+            slides_path=slides_path,
+            processed_path=self.base_savedir,
+            valid_extensions=valid_extensions or [
+                '.tif', '.tiff',  # tils challenge
+                '.svs',  # TCGA
+                '.scn',  # CPS cohorts
+                '.ndpi',  # new cps scans
+                '.mrxs',  # NHS breast
+            ],
+            keep_slides=keep_slides,
+            reverse=self._reverse,
+            slide_kwargs={'use_largeimage': True},
+        )
+        # roi size and scoring
+        self.roi_side_hres = roi_side_hres
+        self.discard_edge_hres = discard_edge_hres
         self.roi_clust_mpp = roi_clust_mpp
         self.topk_rois = topk_rois
-        self.topk_salient_rois = topk_salient_rois
-        if topk_rois is not None:
-            assert topk_salient_rois <= topk_rois, (
-                "The no. of salient ROIs used for final TILs scoring must be "
-                "less than the total no. of rois that we do inference on!"
-            )
-        assert topk_rois_sampling_mode in ("stratified", "weighted", "sorted")
-        self._topk_rois_sampling_mode = topk_rois_sampling_mode
-
-        # model ensembles
-        assert all(os.path.isfile(j) for j in model_paths.values()), \
-            "Some of the models weight files do not exist!"
-        self.model_paths = model_paths
-        self.n_models = len(model_paths)
-
+        # parsing nuclei from inference
+        self.no_watershed_nucleus_classes = no_watershed_nucleus_classes or [
+            'StromalCellNOS', 'ActiveStromalCellNOS']
+        self.min_nucl_size = min_nucl_size
+        self.max_nucl_size = max_nucl_size
+        self.nprops_kwargs = nprops_kwargs or dict(
+            fsd_bnd_pts=128, fsd_freq_bins=6, cyto_width=8,
+            num_glcm_levels=32,
+            morphometry_features_flag=True,
+            fsd_features_flag=True,
+            intensity_features_flag=True,
+            gradient_features_flag=True,
+            haralick_features_flag=True
+        )
+        # color normalization & augmentation
+        self.cnorm = cnorm
+        self.cnorm_kwargs = cnorm_kwargs or {
+            'W_target': np.array([
+                [0.5807549, 0.08314027, 0.08213795],
+                [0.71681094, 0.90081588, 0.41999816],
+                [0.38588316, 0.42616716, -0.90380025]
+            ]),
+            'stain_unmixing_routine_params': {
+                'stains': ['hematoxylin', 'eosin'],
+                'stain_unmixing_method': 'macenko_pca',
+            },
+        }
+        self.maskout_regions_for_cnorm = maskout_regions_for_cnorm or ['BLOOD', 'WHITE', 'EXCLUDE']
+        # config shorthands
+        self._set_convenience_cfg_shorthand()
+        self._fix_mutils_params()
         # vlres cellularity scorer & roi clustering
         self.vlres_scorer_kws = vlres_scorer_kws or {
             'check_tissue': True,
@@ -158,30 +168,32 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
         })
         self.roi_kmeans_kvp = roi_kmeans_kvp or {
             'n_segments': 128, 'compactness': 10, 'threshold': 9}
-
-        # slides to analyse
-        self._reverse = _reverse
-        self.slides = SlideSet(
-            slides_path=slides_path,
-            processed_path=self.base_savedir,
-            valid_extensions=valid_extensions or [
-                '.tif', '.tiff',  # tils challenge
-                '.svs',  # TCGA
-                '.scn',  # CPS cohorts
-                '.ndpi',  # new cps scans
-                '.mrxs',  # NHS breast
-            ],
-            keep_slides=keep_slides,
-            reverse=self._reverse,
-            slide_kwargs={'use_largeimage': True},
+        assert topk_rois_sampling_mode in ("stratified", "weighted", "sorted")
+        self._topk_rois_sampling_mode = topk_rois_sampling_mode
+        # test-time color augmentation (0 = no augmentation)
+        self.ntta = ntta
+        self.dltransforms = dltransforms or transform_dlinput(
+            tlist=['augment_stain'], 
+            make_tensor=False,
+            augment_stain_sigma1=0.75, 
+            augment_stain_sigma2=0.75,
         )
+        # intra-tumoral stroma (saliency)
+        self.filter_stromal_whitespace = filter_stromal_whitespace
+        self.min_tumor_for_saliency = min_tumor_for_saliency
+        self.max_salient_stroma_distance = max_salient_stroma_distance    
+        self.topk_salient_rois = topk_salient_rois
+        if topk_rois is not None:
+            assert topk_salient_rois <= topk_rois, (
+                "The no. of salient ROIs used for final TILs scoring must be "
+                "less than the total no. of rois that we do inference on!"
+            )
         # internal properties that change with slide/roi/hpf (convenience)
         self._slide = None
         self._sldname = None
         self._slmonitor = None
         self._top_rois = None
         self._savedir = None
-        self._modelname = None
         self._mrois = None
         self._mdmonitor = None
         self._rid = None
@@ -189,6 +201,77 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
         self._hpf = None
         self._hid = None
         self._hpfname = None
+
+        self._debug = _debug
+        # misc params
+        self.N_CPUs = N_CPUs
+        self.logger = logger or logging.getLogger(__name__)
+        collect_errors.logger = self.logger
+        collect_errors._debug = self._debug
+        # model ensembles
+        assert all(os.path.isfile(j) for j in model_paths.values()), \
+            "Some of the models weight files do not exist!"
+        self.model_paths = model_paths
+        self.n_models = len(model_paths)
+
+        self.check_gpus()
+    
+# ==================================================================================================
+
+    def check_gpus(self):
+        """Check if GPUs are available. Set self.use_gpus accordingly: True if at least 5 GPUs are 
+        available, False otherwise.
+        """
+        self.logger.info("--- Checking GPUs ------------------------------------")
+        if torch.cuda.is_available() and (torch.cuda.device_count() > 4):
+            self.logger.info(f"Number of GPUs available: {torch.cuda.device_count()}")
+            self.logger.info(f"Running multiple models in parallel on multiple GPUs.")
+            self.load_all_models()
+            use_gpus = True
+        elif torch.cuda.is_available() and (torch.cuda.device_count() < 5):
+            self.logger.info(f"Number of GPUs ({torch.cuda.device_count()}) is less than the number of models (5)")
+            self.logger.info(f"Running single model at once on a single GPU.")
+            use_gpus = False # Don't get confused, a single GPU still can be used!
+        else:
+            self.logger.info("No GPU available, using CPU instead.")
+            use_gpus = False
+        self.logger.info("------------------------------------------------------")
+        
+        self.use_gpus = use_gpus
+
+    def load_model(self, model_path: str=None, device_id: str=None) -> torch.nn.Module:
+        """Load a trained model from a given path and move it to the given device.
+
+        Parameters
+        ----------
+        model_path : str
+            The path to the trained model.
+        device_id : str
+            The device id to move the model to.
+
+        Returns
+        -------
+        torch.nn.Module
+            The loaded model.
+        """
+        if model_path is None:
+            raise ValueError("Model path is missing!")
+        device = torch.device(f'cuda:{device_id}') if torch.cuda.is_available() else torch.device('cpu')
+        model = load_trained_mutils_model(model_path, mtp=self.mtp)
+        model.eval()
+        model.to(device)
+        self.logger.info(f"Model {os.path.basename(model_path)} loaded on device {device}")
+        return model
+
+    def load_all_models(self) -> None:
+        """Load all models if there are enough GPUs available (5)."""
+        self.models = {}
+        i = 0
+        for model_name, model_path in self.model_paths.items():
+            device_id = str(i) if torch.cuda.is_available() else None 
+            i += 1
+            model = self.load_model(model_path, device_id)
+            self.models[model_name] = {"model": model, "device": device_id}
 
     def run_all_slides(self):
         """Run the MuTILs pipeline for all slides."""
@@ -207,6 +290,9 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
     @collect_errors()
     def run_slide(self):
         """"""
+        formatted_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        self.logger.info(f"Starting slide {self._sldname}: {formatted_time} UTC")
+        start_time = time.time()
         # when running slides in reverse order, strictly avoid running on
         # any slide if its director already exists to prevent conflicts
         self._savedir = opj(self.base_savedir, self._sldname)
@@ -219,6 +305,9 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
         self.summarize_slide()
         self._maybe_concat_wsi_mask()
         self._save_slide_metrics()
+        formatted_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        self.logger.info(f"Finishing slide {self._sldname}: {formatted_time} UTC")
+        self.logger.info(f"Runtime of slide {self._sldname}: {np.around(time.time() - start_time, decimals=2)} seconds")
 
     @collect_errors()
     def summarize_slide(self):
@@ -232,15 +321,136 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
             'unweighted_global': self._get_global_metrics(metas),
         }
 
+    @staticmethod
+    def process_chunk(chunk: list, chunk_id: int, config: RoiProcessorConfig):
+        """Processes a chunk of ROIs.
+        
+        Parameters
+        ----------
+        chunk : list
+            List of tuples, each containing the id number of a ROI and the model which dedicated to
+            do the inference on it.
+        config : RoiProcessorConfig
+            The configuration object containing parameters for the RoiProcessor.
+        """
+        try:
+            roi_processor = RoiProcessor(config)
+            roi_processor.run(chunk, chunk_id)
+        except Exception as e:
+            collect_errors(f"Error in process_chunk: {str(e)}")
+
+    def run_parallel_models(self, model_rois: dict):
+        """Runs multiple chunks of ROIs in parallel using multiprocessing.
+
+        Parameters
+        ----------
+        model_rois : dict
+            A dictionary containing the model names as keys and a list of ROI id numbers as values.
+        """
+        number_to_fold = [(roi_number, model) for model, rois in model_rois.items() for roi_number in rois]
+
+        # shuffle the list of numbers to fold
+        np.random.seed(42)
+        np.random.shuffle(number_to_fold)
+
+        if self._debug:
+            self.N_CPUs = 2
+            number_of_rois_to_process = 4 #16
+            number_to_fold = number_to_fold[:number_of_rois_to_process]
+
+        self.logger.info(f"Number of CPUs to use: {self.N_CPUs}")
+        self.logger.info(f"Number of ROIs to use: {len(number_to_fold)}")
+        
+        roi_chunks = [number_to_fold[i::self.N_CPUs] for i in range(self.N_CPUs)]
+
+        mp.set_start_method("spawn", force=True)
+
+        processes = []
+
+        config = RoiProcessorConfig(
+                        _debug=self._debug,
+                        _sldname=self._sldname,
+                        models=self.models,
+                        _top_rois=self._top_rois,
+                        _slide=self._slide,
+                        hres_mpp=self.hres_mpp,
+                        roi_side_hres=self.roi_side_hres,
+                        roi_side_lres=self.roi_side_lres,
+                        cnorm=self.cnorm,
+                        cnorm_kwargs=self.cnorm_kwargs,
+                        ntta=self.ntta,
+                        discard_edge_hres=self.discard_edge_hres,
+                        filter_stromal_whitespace=self.filter_stromal_whitespace,
+                        no_watershed_nucleus_classes=self.no_watershed_nucleus_classes,
+                        maskout_regions_for_cnorm=self.maskout_regions_for_cnorm,
+                        min_nucl_size=self.min_nucl_size,
+                        max_nucl_size=self.max_nucl_size,
+                        max_salient_stroma_distance=self.max_salient_stroma_distance,
+                        min_tumor_for_saliency=self.min_tumor_for_saliency,
+                        _savedir=self._savedir,
+                        save_wsi_mask=self.save_wsi_mask,
+                        save_nuclei_meta=self.save_nuclei_meta,
+                        save_nuclei_props=self.save_nuclei_props,
+                        nprops_kwargs=self.nprops_kwargs,
+                        save_annotations=self.save_annotations
+                    )
+
+        for chunk_id, chunk in enumerate(roi_chunks):
+            p = mp.Process(
+                target=MuTILsWSIRunner.process_chunk, 
+                args=(chunk, chunk_id),
+                kwargs={"config": config}
+            )
+            p.start()
+            processes.append(p)
+
+        for p in processes:
+            p.join()
+
     @collect_errors()
-    def run_single_model(self):
+    def run_single_model(self, _modelname, _mrois):
         """Load & run a single model for all assigned rois."""
         # load model weights
-        self.model_path = self.model_paths[self._modelname]
-        self.load_model()
+        model_path = self.model_paths[_modelname]
+        if torch.cuda.is_available():
+            model = self.load_model(model_path, device_id=0)
+            device = str(0) 
+        else:
+            model = self.load_model(model_path)
+            device = "cpu" 
+        models = {_modelname: {"model": model, "device": device}}
+        # create roi processor
+        config = RoiProcessorConfig(
+                _debug=self._debug,
+                _sldname=self._sldname,
+                models=models,
+                _top_rois=self._top_rois,
+                _slide=self._slide,
+                hres_mpp=self.hres_mpp,
+                roi_side_hres=self.roi_side_hres,
+                roi_side_lres=self.roi_side_lres,
+                cnorm=self.cnorm,
+                cnorm_kwargs=self.cnorm_kwargs,
+                ntta=self.ntta,
+                discard_edge_hres=self.discard_edge_hres,
+                filter_stromal_whitespace=self.filter_stromal_whitespace,
+                no_watershed_nucleus_classes=self.no_watershed_nucleus_classes,
+                maskout_regions_for_cnorm=self.maskout_regions_for_cnorm,
+                min_nucl_size=self.min_nucl_size,
+                max_nucl_size=self.max_nucl_size,
+                max_salient_stroma_distance=self.max_salient_stroma_distance,
+                min_tumor_for_saliency=self.min_tumor_for_saliency,
+                _savedir=self._savedir,
+                save_wsi_mask=self.save_wsi_mask,
+                save_nuclei_meta=self.save_nuclei_meta,
+                save_nuclei_props=self.save_nuclei_props,
+                nprops_kwargs=self.nprops_kwargs,
+                save_annotations=self.save_annotations
+            )
+        roi_processor = RoiProcessor(config)
         # Iterate through one roi at a time
-        nrois = len(self._mrois)
-        for rno, self._rid in enumerate(self._mrois):
+        nrois = len(_mrois)
+        for rno, _rid in enumerate(_mrois):
 
             if self._debug and rno > 1:
                 break
@@ -248,23 +458,8 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
             self._rmonitor = f"{self._mdmonitor}: roi {rno + 1} of {nrois}"
             collect_errors.monitor = self._rmonitor
             self.logger.info(self._rmonitor)
-            self.run_roi()
-
-    @collect_errors()
-    def run_roi(self):
-        """Run model over a single roi."""
-        self._roiname = (
-            f"{self._sldname}_roi-{self._rid}"
-            f"{self._bounds2str(*self._roicoords)}"
-        )
-        # get and predict roi
-        tile = self._slide.extract_tile(
-            coords=self._top_rois[self._rid][1], mpp=self.hres_mpp,
-            tile_size=(self.roi_side_hres, self.roi_side_hres),
-        )
-        rgb, preds = self._predict_roi(tile=tile)
-        # summarize & save metadata
-        self._summarize_roi(preds)
+            roi_id_and_model_name = [_rid, _modelname]
+            roi_processor.run_roi(roi_id_and_model_name)
 
     def tile_scorer_by_tissue_ratio(self, tile: Tile):
         """"""
@@ -306,7 +501,11 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
 
         return score
 
-    # HELPERS -----------------------------------------------------------------
+    # HELPERS --------------------------------------------------------------------------------------
+
+    @property
+    def _roicoords(self):
+        return [int(j) for j in self._top_rois[self._rid][1]]
 
     def _save_slide_metrics(self):
         """
@@ -439,51 +638,6 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
 
         return summ
 
-    def _summarize_roi(self, preds):
-        """
-        Get metrics from roi.
-        """
-        rgsumm, metrics = self._get_region_metrics(
-            preds['mask'][..., 0], sstroma=preds['sstroma'])
-        nusumm, nmetrics = self._get_nuclei_metrics(
-            preds['cldf'], rstroma_count=rgsumm['pixelCount_AnyStroma'])
-        metrics.update(nmetrics)
-        left, top, right, bottom = self._roicoords
-        meta = {
-            'slide_name': self._sldname,
-            'roi_id': self._rid,
-            'roi_name': self._roiname,
-            'wsi_left': left,
-            'wsi_top': top,
-            'wsi_right': right,
-            'wsi_bottom': bottom,
-            'mpp': self.hres_mpp,
-            'model_name': self._modelname,
-            'metrics': metrics,
-            'region_summary': rgsumm,
-            'nuclei_summary': nusumm,
-        }
-        save_json(meta, path=opj(
-            self._savedir, 'roiMeta', self._roiname + '.json'))
-
-    def _get_region_metrics(self, mask, sstroma):
-        """
-        Summarize region mask and some metrics.
-        """
-        # pixel summaries
-        out = summarize_region_mask(mask, rcd=self.rcd)
-        out['pixelCount_EXCLUDE'] -= self.n_edge_pixels_discarded
-        # isolate salient tils
-        salient_tils = mask == self.rcd['TILS']
-        salient_tils[~sstroma] = False
-        p = 'pixelCount'
-        out.update({
-            f'{p}_SalientStroma': int(sstroma.sum()),
-            f'{p}_SalientTILs': int(salient_tils.sum()),
-        })
-
-        return self._region_metrics(out)
-
     def _region_metrics(self, out: dict, nrois=1):
         """
         Given pixel count summary, summarize region metrics
@@ -515,15 +669,6 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
 
         return out, metrics
 
-    def _get_nuclei_metrics(self, cldf, rstroma_count):
-        """
-        Summarize nuclei mask and some metrics.
-        """
-        out = summarize_nuclei_mask(
-            cldf.loc[:, 'Classif.StandardClass'].to_dict(), ncd=self.ncd)
-
-        return self._nuclei_metrics(out, rstroma_count)
-
     @staticmethod
     def _nuclei_metrics(out: dict, rst_count):
         """
@@ -543,154 +688,6 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
         }
 
         return out, metrics
-
-    @property
-    def _roicoords(self):
-        return [int(j) for j in self._top_rois[self._rid][1]]
-
-    def _predict_roi(self, tile: Tile):
-        """Get MuTILS predictions for one ROI."""
-        hres_ignore, lres_ignore = self._get_tile_ignore(tile)
-        rgb = self.maybe_color_normalize(
-            tile.image.convert('RGB'), mask_out=hres_ignore)
-        inference = self.do_inference(rgb=rgb, lres_ignore=lres_ignore)
-        preds = self.refactor_inference(inference, hres_ignore=hres_ignore)
-        preds['sstroma'] = self.get_salient_stroma_mask(
-            preds['combined_mask'][..., 0])
-        self._maybe_save_roi_preds(rgb=rgb, preds=preds)
-        preds = self._simplify_roi_preds(preds)
-
-        return rgb, preds
-
-    @collect_errors()
-    def _maybe_save_roi_preds(self, rgb, preds):
-        """Save masks, metadata, etc."""
-        if self.save_wsi_mask:
-            mask = preds['combined_mask'].copy()
-            imwrite(
-                opj(self._savedir, 'roiMasks', self._roiname + '.png'), mask
-            )
-        self._maybe_visualize_roi(
-            rgb, mask=preds['combined_mask'], sstroma=preds['sstroma'])
-        if self.save_nuclei_meta:
-            preds['classif_df'].to_csv(
-                opj(self._savedir, 'nucleiMeta', self._roiname + '.csv'),
-            )
-        self._maybe_save_nuclei_props(rgb=rgb, preds=preds)
-        self._maybe_save_nuclei_annotation(preds['classif_df'])
-
-    @collect_errors()
-    def _maybe_save_nuclei_annotation(self, classif_df):
-        """
-        Save nuclei locations annotation.
-        """
-        if not self.save_annotations:
-            return
-
-        # fix coords to wsi base magnification
-        left, top, _, _ = self._roicoords
-        colmap = {
-            'Identifier.CentroidX': 'x',
-            'Identifier.CentroidY': 'y',
-            'Classif.StandardClass': 'StandardClass',
-            'Classif.SuperClass': 'SuperClass',
-        }
-        df = classif_df.loc[:, list(colmap.keys())].copy()
-        df.rename(columns=colmap, inplace=True)
-        df[['x', 'y']] = df[['x', 'y']].astype(float) * (self.hres_mpp / self._slide.base_mpp)
-        df.loc[:, 'x'] += left
-        df.loc[:, 'y'] += top
-
-        self._save_nuclei_locs_hui_style(df)
-
-    def _save_nuclei_locs_hui_style(self, df):
-        """Save nuclei centroids annotation HistomicsUI style."""
-        anndoc = {
-            'name': f"nucleiLocs_{self._roiname}",
-            'description': 'Nuclei centroids.',
-            'elements': self._df_to_points_list_hui_style(df),
-        }
-        savename = opj(
-            self._savedir, 'annotations', f'nucleiLocs_{self._roiname}.json')
-        save_json(anndoc, path=savename)
-
-    def _df_to_points_list_hui_style(self, df):
-        """
-        Parse TILs score datafram to a list of Points dicts, in accordance
-        with the HistomicsUI platform schema.
-
-        This implementation is specifically made to avoid doing a python
-        loop over each row, and instead relies on pandas ops which are more
-        efficient.
-        """
-        # handle if no nuclei in ROI
-        if df.shape[0] < 1:
-            return []
-
-        df.loc[:, 'lineColor'] = df.loc[:, 'StandardClass'].map({
-            cls: self._huicolor(col)
-            for cls, col in self.cfg.VisConfigs.NUCLEUS_COLORS.items()
-        })
-        records = (
-                "{'type': 'point', " f"'group': '"
-                + df.loc[:, 'StandardClass']
-                + "', 'label': {" f"'value': '"
-                + df.loc[:, 'StandardClass']
-                + "'}, 'lineColor': '"
-                + df.loc[:, 'lineColor']
-                + "', 'lineWidth': 2, 'center': ["
-                + df.loc[:, 'x'].astype(int).astype(str)
-                + ", "
-                + df.loc[:, 'y'].astype(int).astype(str)
-                + ", 0]}"
-        )
-        records = records.apply(lambda x: ast.literal_eval(x)).to_list()
-
-        return records
-
-    @collect_errors()
-    def _maybe_save_nuclei_props(self, rgb, preds):
-        """Get and save nuclear morphometric features."""
-        if not self.save_nuclei_props:
-            return
-        self.logger.info(self._rmonitor + ": getting nuclei props ..")
-        props = self.get_nuclei_props_df(rgb=np.uint8(rgb), preds=preds)
-        props.to_csv(
-            opj(self._savedir, 'nucleiProps', self._roiname + '.csv'),
-        )
-
-    @collect_errors()
-    def _maybe_visualize_roi(self, rgb, mask, sstroma):
-        """
-        Plot and save roi visualization.
-        """
-        if not self._debug:
-            return
-
-        _, ax = plt.subplots(1, 2, figsize=(7. * 2, 7.))
-        ax[0].imshow(rgb)
-        ax[0].imshow(
-            np.ma.masked_array(sstroma, mask=~sstroma), alpha=0.3,
-            cmap=ListedColormap([[0.01, 0.74, 0.25]]),
-        )
-        ax[1].imshow(
-            gvcm(mask), cmap=self.cfg.VisConfigs.COMBINED_CMAP,
-            interpolation='nearest')
-        plt.tight_layout(pad=0.4)
-        plt.savefig(opj(self._savedir, 'roiVis', self._roiname + '.png'))
-        plt.close()
-
-    @staticmethod
-    def _simplify_roi_preds(preds):
-        """Keep only what's needed and simplify terminology."""
-        keep_cols = [
-            c for c in preds['classif_df'].columns
-            if not c.startswith('Unconstrained.')]
-        return {
-            'mask': preds['combined_mask'],
-            'sstroma': preds['sstroma'],
-            'cldf': preds['classif_df'].loc[:, keep_cols],
-        }
 
     def _get_tile_ignore(
             self, tile: Tile, filter_tissue=False, get_lres=True):
@@ -716,17 +713,20 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
         self._create_slide_dirs()
         model_rois = self._load_or_extract_roi_locs()
         self._maybe_save_roilocs_annotation(model_rois)
-        mno = -1
-        for self._modelname, self._mrois in model_rois.items():
+        if self.use_gpus:
+            self.run_parallel_models(model_rois)
+            self._maybe_merge_logs()
+        else:
+            mno = -1
+            for _modelname, _mrois in model_rois.items():
+                mno += 1
+                if self._debug and mno > 1:
+                    break
 
-            mno += 1
-            if self._debug and mno > 0:
-                break
-
-            self._mdmonitor = f"{self._slmonitor}: {self._modelname}"
-            collect_errors.monitor = self._mdmonitor
-            self.logger.info(self._mdmonitor)
-            self.run_single_model()
+                self._mdmonitor = f"{self._slmonitor}: {_modelname}"
+                collect_errors.monitor = self._mdmonitor
+                self.logger.info(self._mdmonitor)
+                self.run_single_model(_modelname, _mrois)
 
         collect_errors.monitor = self._slmonitor
 
@@ -1052,14 +1052,94 @@ class MuTILsWSIRunner(MutilsInferenceRunner):
             'outputs': [],
         }
 
+    def _set_convenience_cfg_shorthand(self):
+        """Convenience shorthand."""
+        self.mtp = self.model_configs.MuTILsParams
+        self.rcc = self.model_configs.RegionCellCombination
+        self.rcd = self.model_configs.RegionCellCombination.REGION_CODES
+        self.ncd = self.model_configs.RegionCellCombination.NUCLEUS_CODES
+        self.no_watershed_lbls = {
+            self.ncd[cls] for cls in self.no_watershed_nucleus_classes}
+        self.maskout_region_codes = [
+            self.rcd[reg] for reg in self.maskout_regions_for_cnorm]
 
-# =============================================================================
+    def _fix_mutils_params(self):
+        """params that must be true for inference"""
+        # magnification & size settings
+        self.hres_mpp = self.mtp.model_params['hpf_mpp']
+        self.lres_mpp = self.mtp.model_params['roi_mpp']
+        self.vlres_mpp = 2 * self.lres_mpp
+        self.h2l = self.hres_mpp / self.lres_mpp
+        self.h2vl = self.hres_mpp / self.vlres_mpp
+        self.roi_side_lres = int(self.h2l * self.roi_side_hres)
+        self.roi_side_vlres = int(self.h2vl * self.roi_side_hres)
+        self.n_edge_pixels_discarded = 4 * self.discard_edge_hres * (
+            self.roi_side_hres - self.discard_edge_hres)
+        # MuTILs params
+        self.mtp.model_params.update({
+            'training': False,
+            'roi_side': self.roi_side_lres,
+            'hpf_side': self.roi_side_hres,  # predict all nuclei in roi
+            'topk_hpf': 1,
+        })
+
+    @staticmethod
+    def _ksums(records, ks: list, k0=None):
+        """Get sum of some value (eg pixels) from multiple rois."""
+        whats = records if k0 is None else [j[k0] for j in records]
+        whats = DataFrame.from_records(
+            whats,
+            exclude=[k for k, v in whats[0].items() if isinstance(v, dict)]
+        ).loc[:, ks]
+
+        return whats.sum(0).to_dict()
+
+    @staticmethod
+    def _get_latest_logfile(directory, pattern: str="MuTILsWSIRunner_2*"):
+        """
+        Returns the latest (most recently modified) file in the directory.
+        
+        Args:
+            directory (str): Path to the directory.
+            pattern (str): Pattern to match files.
+        
+        Returns:
+            str: Path to the latest file, or None if no files are found.
+        """
+        files = glob(os.path.join(directory, pattern))
+        if not files:
+            return None
+        
+        latest_file = max(files, key=os.path.getmtime)
+        return latest_file
+
+    def _maybe_merge_logs(self):
+        """Merge logs from parallel processes."""
+        if not self.use_gpus:
+            return
+
+        logdir = '/home/output/LOGS'
+        latest_logfile = self._get_latest_logfile(logdir)
+        chunk_logs = glob(opj(logdir, 'MuTILsWSIRunner_chunk*'))
+
+        with open(latest_logfile, 'a') as outfile:
+            for log in chunk_logs:
+                with open(log, 'r') as infile:
+                    content = infile.read()
+                    outfile.write(content)
+
+        # Delete the chunk logs
+        for log in chunk_logs:
+            try:
+                os.remove(log)
+            except Exception as e:
+                self.logger.info(f"Failed to delete {log}: {e}")
+# ==================================================================================================
 
 
 if __name__ == "__main__":
 
-    from MuTILs_Panoptic.configs.MuTILsWSIRunConfigs import RunConfigs
-    import argparse
+    start = time.time()
 
     parser = argparse.ArgumentParser(description='Run MuTILsWSI model.')
     parser.add_argument('-s', '--subsets', type=int, default=[0], nargs='+')
@@ -1092,3 +1172,5 @@ if __name__ == "__main__":
         )
 
         runner.run_all_slides()
+
+    logging.info(f"Total runtime of MuTILsWSI: {np.around(time.time() - start, decimals=2)} seconds")
