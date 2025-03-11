@@ -68,15 +68,15 @@ def load_torch_model(checkpoint_path, model, optimizer=None):
 
     # load model state
     try:
-        model.module.load_state_dict(torch.load(checkpoint_path, **extra))
+        model.module.load_state_dict(torch.load(checkpoint_path, weights_only=True, **extra))
     except AttributeError:  # this is not a Dataparallel model
-        model.load_state_dict(torch.load(checkpoint_path, **extra))
+        model.load_state_dict(torch.load(checkpoint_path, weights_only=True, **extra))
 
     # load optimizer state
     if optimizer is not None:
         optimizer_path = checkpoint_path.replace('.pt', '.optim')
         if os.path.exists(optimizer_path):
-            optimizer.load_state_dict(torch.load(optimizer_path, **extra))
+            optimizer.load_state_dict(torch.load(optimizer_path, weights_only=True, **extra))
         else:
             warn(f"Existing optimizer not found at: {optimizer_path}")
 
