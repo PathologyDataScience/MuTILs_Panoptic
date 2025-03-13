@@ -36,83 +36,31 @@ collect_errors = CollectErrors()
 
 @dataclass
 class RoiProcessorConfig:
-    _debug: bool = False
-    _sldname: str = ""
-    models: dict = field(default_factory=dict)
-    _top_rois: any = None
-    _slide: any = None
-    hres_mpp: float = 0.25
-    roi_side_hres: int = 256
-    roi_side_lres: int = 64
-    cnorm: any = None
-    cnorm_kwargs: dict = field(default_factory=lambda: {
-        'W_target': np.array([
-            [0.5807549, 0.08314027, 0.08213795],
-            [0.71681094, 0.90081588, 0.41999816],
-            [0.38588316, 0.42616716, -0.90380025]
-        ]),
-        'stain_unmixing_routine_params': {
-            'stains': ['hematoxylin', 'eosin'],
-            'stain_unmixing_method': 'macenko_pca',
-        }
-    })
-    ntta: any = None
-    discard_edge_hres: int = 0
-    filter_stromal_whitespace: bool = False
-    no_watershed_nucleus_classes: list = field(default_factory=lambda: [
-        'StromalCellNOS', 'ActiveStromalCellNOS'])
-    maskout_regions_for_cnorm: list = field(default_factory=lambda: ['BLOOD', 'WHITE', 'EXCLUDE'])
-    min_nucl_size: int = 10
-    max_nucl_size: int = 100
-    max_salient_stroma_distance: float = 50.0
-    min_tumor_for_saliency: float = 0.1
-    nprops_kwargs: dict = field(default_factory=lambda: dict(
-        fsd_bnd_pts=128, fsd_freq_bins=6, cyto_width=8,
-        num_glcm_levels=32,
-        morphometry_features_flag=True,
-        fsd_features_flag=True,
-        intensity_features_flag=True,
-        gradient_features_flag=True,
-        haralick_features_flag=True
-    ))
-    _savedir: str = "./output"
-    save_wsi_mask: bool = False
-    save_nuclei_meta: bool = False
-    save_nuclei_props: bool = False
-    save_annotations: bool = False
-
-    def __post_init__(self):
-        """ Restore default values if None provided at initialization. """
-        if self.cnorm_kwargs is None:
-            self.cnorm_kwargs = {
-                'W_target': np.array([
-                    [0.5807549, 0.08314027, 0.08213795],
-                    [0.71681094, 0.90081588, 0.41999816],
-                    [0.38588316, 0.42616716, -0.90380025]
-                ]),
-                'stain_unmixing_routine_params': {
-                    'stains': ['hematoxylin', 'eosin'],
-                    'stain_unmixing_method': 'macenko_pca',
-                }
-            }
-        
-        if self.no_watershed_nucleus_classes is None:
-            self.no_watershed_nucleus_classes = [
-                'StromalCellNOS', 'ActiveStromalCellNOS']
-            
-        if self.maskout_regions_for_cnorm is None:
-            self.maskout_regions_for_cnorm = ['BLOOD', 'WHITE', 'EXCLUDE']
-
-        if self.nprops_kwargs is None:
-            self.nprops_kwargs = dict(
-                fsd_bnd_pts=128, fsd_freq_bins=6, cyto_width=8,
-                num_glcm_levels=32,
-                morphometry_features_flag=True,
-                fsd_features_flag=True,
-                intensity_features_flag=True,
-                gradient_features_flag=True,
-                haralick_features_flag=True
-            )        
+    _debug: bool
+    _sldname: str
+    models: dict
+    _top_rois: any
+    _slide: any
+    hres_mpp: float
+    roi_side_hres: int
+    roi_side_lres: int
+    cnorm: bool
+    cnorm_kwargs: dict
+    ntta: int
+    discard_edge_hres: int
+    filter_stromal_whitespace: bool
+    no_watershed_nucleus_classes: list
+    maskout_regions_for_cnorm: list
+    min_nucl_size: int
+    max_nucl_size: int
+    max_salient_stroma_distance: float
+    min_tumor_for_saliency: float
+    nprops_kwargs: dict
+    _savedir: str
+    save_wsi_mask: bool
+    save_nuclei_meta: bool
+    save_nuclei_props: bool
+    save_annotations: bool      
 
 class RoiProcessor:
     def __init__(self, config: RoiProcessorConfig):
