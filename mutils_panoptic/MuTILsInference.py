@@ -3,7 +3,6 @@ import numpy as np
 import torch
 import matplotlib.pylab as plt
 import ast
-import logging
 from os.path import join as opj
 from PIL import Image
 from imageio import imwrite
@@ -159,9 +158,11 @@ class RoiProcessor:
         self._rid = roi[0]
         self._modelname = roi[1]
 
-        if torch.cuda.is_available():
+        if torch.cuda.device_count() > 4:
             self.device = f"cuda:{self.models[self._modelname]['device']}"
             self.logger.info(f"Running ROI {self._rid} with model {self._modelname} on device {self.device}")
+        elif torch.cuda.is_available() and (torch.cuda.device_count() < 5):
+            self.device = "cuda:0"
         else:
             self.device = "cpu"
 
