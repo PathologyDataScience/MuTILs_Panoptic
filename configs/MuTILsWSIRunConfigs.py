@@ -61,11 +61,18 @@ class ConfigParser:
         Raises:
             KeyError: If any of the required configuration values are not set in the config file.
         """
-        required_keys = ['_debug', 'N_CPUs', 'N_SUBSETS', 'slides_path', 'base_savedir', 'model_paths',
-                         'model_configs', 'save_wsi_mask', 'save_annotations',
-                         'save_nuclei_meta', 'save_nuclei_props', 'roi_side_hres', 'discard_edge_hres',
-                         'topk_rois', 'topk_rois_sampling_mode',
-                         'topk_salient_rois', 'vlres_scorer_kws'
+        required_keys = ['model_configs', 
+                         'slides_path', 'base_savedir', 'model_paths',
+                         'save_wsi_mask', 'save_annotations','save_nuclei_meta', 'save_nuclei_props', 
+                         'roi_side_hres', 'discard_edge_hres', 'roi_clust_mpp',
+                         'topk_rois', 'vlres_scorer_kws', 'roi_kmeans_kvp', 'topk_rois_sampling_mode',
+                         'cnorm', 'cnorm_kwargs', 'maskout_regions_for_cnorm', 'ntta', 'dltransforms',
+                         'valid_extensions',
+                         'filter_stromal_whitespace', 'min_tumor_for_saliency',
+                         'max_salient_stroma_distance', 'topk_salient_rois',
+                         'no_watershed_nucleus_classes', 
+                         'min_nucl_size', 'max_nucl_size', 'nprops_kwargs',
+                         'N_SUBSETS', 'N_CPUs', '_debug'
         ]
         for key in required_keys:
             if key not in config_dictionary:
