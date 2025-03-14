@@ -9,7 +9,7 @@ from imageio import imwrite
 from matplotlib.colors import ListedColormap
 from pandas import DataFrame, concat
 from skimage.morphology import binary_dilation
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 # histolab
 from histolab.util import np_to_pil
@@ -77,6 +77,10 @@ class RoiProcessor:
             self.rcd[reg] for reg in self.maskout_regions_for_cnorm]
         self.n_edge_pixels_discarded = 4 * self.discard_edge_hres * (
             self.roi_side_hres - self.discard_edge_hres)
+        
+        self.preprocessor = RoiPreProcessor(self)
+        self.inferenceprocessor = RoiInferenceProcessor(self)
+        self.postprocessor = RoiPostProcessor(self)
 
     def run(self, rois: list, chunk_id: int=None) -> None:
         """Run model over multiple rois.
@@ -105,7 +109,24 @@ class RoiProcessor:
         """
         self._rid = roi[0]
         self._modelname = roi[1]
+        self._roiname = (
+            f"{self._sldname}_roi-{self._rid}"
+            f"{self._bounds2str(*self._roicoords)}"
+        )
 
+        self.set_device()
+
+        # Get tile
+        tile = self.get_tile()
+        # Run preprocessing
+        rgb, batch, hres_ignore = self.preprocessor.run(tile)
+        # Run inference
+        inference = self.inferenceprocessor.run(batch)
+        # Run postprocessing
+        self.postprocessor.run(inference, hres_ignore, rgb)
+
+    def set_device(self) -> None:
+        """Set device to run model on."""
         if torch.cuda.device_count() > 4:
             self.device = f"cuda:{self.models[self._modelname]['device']}"
             self.logger.info(f"Running ROI {self._rid} with model {self._modelname} on device {self.device}")
@@ -114,25 +135,28 @@ class RoiProcessor:
         else:
             self.device = "cpu"
 
-        self._roiname = (
-            f"{self._sldname}_roi-{self._rid}"
-            f"{self._bounds2str(*self._roicoords)}"
-        )
-        # get and predict roi
-        tile = self._slide.extract_tile(
-            coords=self._top_rois[self._rid][1], mpp=self.hres_mpp,
+    def get_tile(self) -> Tile:
+        """Get tile for the current ROI."""
+        return self._slide.extract_tile(
+            coords=self._top_rois[self._rid][1], 
+            mpp=self.hres_mpp,
             tile_size=(self.roi_side_hres, self.roi_side_hres),
         )
-        _, preds = self._predict_roi(tile=tile)
-        # summarize & save metadata
-        self._summarize_roi(preds)
 
     @property
     def _roicoords(self):
         return [int(j) for j in self._top_rois[self._rid][1]]
+    
+    @staticmethod
+    def _bounds2str(left, top, right, bottom):
+        return f"_left-{left}_top-{top}_right-{right}_bottom-{bottom}"
+    
+class RoiPreProcessor(RoiProcessor):
+    def __init__(self, parent: RoiProcessor):
+        self.parent = parent
 
-    def _predict_roi(self, tile: Tile) -> tuple:
-        """Get MuTILs predictions for one ROI.
+    def run(self, tile: Tile) -> tuple:
+        """Run preprocessing for the ROI.
         
         Parameters:
         ----------
@@ -142,23 +166,15 @@ class RoiProcessor:
         Returns:
         -------
         tuple
-            Tuple containing the ROI image and the predictions.
+            Tuple containing the RGB image, batch data, and high resolution ignore mask.
         """
-        hres_ignore, lres_ignore = self._get_tile_ignore(tile)
-        rgb = self.maybe_color_normalize(
-            tile.image.convert('RGB'), mask_out=hres_ignore)
+        hres_ignore, lres_ignore = self.get_tile_ignore(tile)
+        rgb = self.maybe_color_normalize(tile.image.convert('RGB'), mask_out=hres_ignore)
+        batch = self.prep_batchdata(rgb, lres_ignore)
+        
+        return rgb, batch, hres_ignore
 
-        inference = self.do_inference(rgb=rgb, lres_ignore=lres_ignore)
-
-        preds = self.refactor_inference(inference, hres_ignore=hres_ignore)
-        preds['sstroma'] = self.get_salient_stroma_mask(
-            preds['combined_mask'][..., 0])
-        self._maybe_save_roi_preds(rgb=rgb, preds=preds)
-        preds = self._simplify_roi_preds(preds)
-
-        return rgb, preds
-    
-    def _get_tile_ignore(self, tile: Tile, filter_tissue=False, get_lres=True) -> tuple:
+    def get_tile_ignore(self, tile: Tile, filter_tissue=False, get_lres=True) -> tuple:
         """Get region outside tissue (eg. marker pen & white space)
         
         Parameters:
@@ -182,7 +198,7 @@ class RoiProcessor:
         hres_ignore = Image.fromarray(hres_ignore)
         if get_lres:
             lres_ignore = hres_ignore.resize(
-                (self.roi_side_lres, self.roi_side_lres), Image.NEAREST)
+                (self.parent.roi_side_lres, self.parent.roi_side_lres), Image.NEAREST)
             lres_ignore = np.array(lres_ignore, dtype=bool)
         else:
             lres_ignore = None
@@ -205,40 +221,93 @@ class RoiProcessor:
         Image
             Color normalized image.
         """
-        if self.cnorm:
+        if self.parent.cnorm:
             rgb = deconvolution_based_normalization(
-                np.array(rgb), mask_out=mask_out, **self.cnorm_kwargs)
+                np.array(rgb), mask_out=mask_out, **self.parent.cnorm_kwargs)
             rgb = np_to_pil(rgb)
 
         return rgb
+  
+    def prep_batchdata(self, rgb: Image, lres_ignore=None) -> list:
+        """Prep tensor batch data for MuTILs model inference."""
+        # prep batch tensors
+        batchdata = []
+        for aug in range(self.parent.ntta + 1):
+            # maybe apply test-time augmentation
+            rgb1 = rgb.copy()
+            if aug > 0:
+                rgb1, _ = self.parent.dltransforms(rgb1, {})
+            # resize low resolution rgb to desired mpp
+            lres_rgb1 = rgb1.resize(
+                (self.parent.roi_side_lres, self.parent.roi_side_lres), Image.LANCZOS)
+            # tensorize
+            rgb1, _ = pil2tensor(rgb1, {})
+            lres_rgb1, _ = pil2tensor(lres_rgb1, {})
+            bd = {
+                'highres_rgb': rgb1[None, ...],
+                'lowres_rgb': lres_rgb1[None, ...],
+            }
+            if lres_ignore is not None:
+                ignore = torch.as_tensor(lres_ignore, dtype=torch.float32)
+                bd['lowres_ignore'] = ignore[None, None, ...]
+            batchdata.append(bd)
+        # move all to device
+        batchdata = [
+            {k: v.to(self.parent.device) for k, v in bd.items()} for bd in batchdata
+        ]
+        return batchdata
+
+class RoiInferenceProcessor(RoiProcessor):
+    def __init__(self, parent: RoiProcessor):
+        self.parent = parent
 
     @torch.no_grad()
-    def do_inference(self, rgb: Image, lres_ignore=None) -> dict:
+    def run(self, batchdata: list) -> dict:
         """Do MuTILs model inference.
         
         Parameters:
         ----------
-        rgb: Image
-            RGB image to do inference on.
-        lres_ignore: np.array
-            Low resolution ignore mask.
+        batchdata: list
+            List containing the batch data.
             
         Returns:
         -------
         dict
             Dictionary containing the model inference.
         """
-        model_info = self.models[self._modelname]  # Retrieve model
+        model_info = self.parent.models[self.parent._modelname]  # Retrieve model
         model = model_info["model"]
-
-        batchdata = self._prep_batchdata(rgb=rgb, lres_ignore=lres_ignore)
 
         inference = model(batchdata)
 
         del batchdata
         torch.cuda.empty_cache()
-        
+
         return inference
+
+class RoiPostProcessor(RoiProcessor):
+    def __init__(self, parent: RoiProcessor):
+        self.parent = parent
+
+    def run(self, inference: dict, hres_ignore: np.array, rgb: Image) -> None:
+        """Run postprocessing for the ROI.
+
+        Parameters:
+        ----------
+        inference: dict
+            Dictionary containing the model inference.
+        hres_ignore: np.array
+            High resolution ignore mask.
+        rgb: Image
+            RGB image of the ROI.
+        """
+        preds = self.refactor_inference(inference, hres_ignore=hres_ignore)
+        preds['sstroma'] = self.get_salient_stroma_mask(preds['combined_mask'][..., 0])
+        self._maybe_save_roi_preds(rgb=rgb, preds=preds)
+        preds = self._simplify_roi_preds(preds)
+
+        self._summarize_roi(preds)
+
 
     def refactor_inference(self, inference, hres_ignore=None):
         """
@@ -294,15 +363,15 @@ class RoiProcessor:
         """
         Salient stroma is within x um from tumor (i.e. intra-tumoral).
         """
-        stroma_mask = mask == self.rcd['STROMA']
-        stroma_mask[mask == self.rcd['TILS']] = True
+        stroma_mask = mask == self.parent.rcd['STROMA']
+        stroma_mask[mask == self.parent.rcd['TILS']] = True
         params = {
             'surround_mask': stroma_mask,
-            'max_dist': self.max_salient_stroma_distance,
-            'min_ref_pixels': self.min_tumor_for_saliency,
+            'max_dist': self.parent.max_salient_stroma_distance,
+            'min_ref_pixels': self.parent.min_tumor_for_saliency,
         }
         peri_tumoral = get_region_within_x_pixels(
-            center_mask=mask == self.rcd['TUMOR'], **params)
+            center_mask=mask == self.parent.rcd['TUMOR'], **params)
 
         # # THE FOLLOWING BADLY SKEWS RESULTS!!
         # # Normal acini are commonly only predicted as "normal" at the
@@ -321,7 +390,7 @@ class RoiProcessor:
         # get hematoxylin and eosin channels
         mask_out = np.in1d(
             preds['combined_mask'][..., 0],
-            self.maskout_region_codes
+            self.parent.maskout_region_codes
         ).reshape(preds['combined_mask'].shape[:2])
         stains, _, _ = color_deconvolution_routine(
             im_rgb=rgb, mask_out=mask_out,
@@ -335,13 +404,13 @@ class RoiProcessor:
                 im_label=preds['nobjects_mask'],
                 im_nuclei=stains[..., 0],
                 im_cytoplasm=stains[..., 1],
-                **self.nprops_kwargs
+                **self.parent.nprops_kwargs
             )
         nprops.rename(columns={'Label': 'Identifier.ObjectCode'}, inplace=True)
         for attrstr, attr in [
-            ('roiname', self._roiname),
-            ('slide', self._sldname),
-            ('fold', self._modelname)
+            ('roiname', self.parent._roiname),
+            ('slide', self.parent._sldname),
+            ('fold', self.parent._modelname)
         ]:
             if attr is not None:
                 nprops.insert(0, attrstr, attr)
@@ -354,24 +423,20 @@ class RoiProcessor:
         """
         Whitespace within x um from stroma is just hypodense stroma.
         """
-        if not self.filter_stromal_whitespace:
+        if not self.parent.filter_stromal_whitespace:
             return mask
 
-        stroma_mask = mask == self.rcd['STROMA']
-        stroma_mask[mask == self.rcd['TILS']] = True
+        stroma_mask = mask == self.parent.rcd['STROMA']
+        stroma_mask[mask == self.parent.rcd['TILS']] = True
         hypodense_stroma = get_region_within_x_pixels(
             center_mask=stroma_mask,
-            surround_mask=mask == self.rcd['WHITE'],
+            surround_mask=mask == self.parent.rcd['WHITE'],
             max_dist=32,  # todo: make as param?
-            min_ref_pixels=self.min_tumor_for_saliency,
+            min_ref_pixels=self.parent.min_tumor_for_saliency,
         )
-        mask[hypodense_stroma] = self.rcd['STROMA']
+        mask[hypodense_stroma] = self.parent.rcd['STROMA']
 
         return mask
-
-    @staticmethod
-    def _bounds2str(left, top, right, bottom):
-        return f"_left-{left}_top-{top}_right-{right}_bottom-{bottom}"
 
     def _combine_mask(self, regions, semantic):
         """
@@ -379,7 +444,7 @@ class RoiProcessor:
         second is nuclei semantic segmentation mask, and third is nucl. edges.
         """
         tmp_msk = semantic.copy()
-        tmp_msk[tmp_msk == self.ncd['BACKGROUND']] = 0
+        tmp_msk[tmp_msk == self.parent.ncd['BACKGROUND']] = 0
         tmp_msk = 0 + (tmp_msk > 0)
         dilated = binary_dilation(tmp_msk)
         edges = dilated - tmp_msk
@@ -393,7 +458,7 @@ class RoiProcessor:
         new_objcodes = objcodes.copy()
         for obc in objcodes:
             yx = cy_argwhere.cy_argwhere2d(objmask == obc)
-            if yx.shape[0] < self.min_nucl_size ** 2:
+            if yx.shape[0] < self.parent.min_nucl_size ** 2:
                 objmask[yx[:, 0], yx[:, 1]] = 0
                 new_objcodes.remove(obc)
                 continue
@@ -401,7 +466,7 @@ class RoiProcessor:
             ymax, xmax = yx.max(0)
             width = xmax - xmin
             height = ymax - ymin
-            if (width < self.min_nucl_size) or (height < self.min_nucl_size):
+            if (width < self.parent.min_nucl_size) or (height < self.parent.min_nucl_size):
                 objmask[yx[:, 0], yx[:, 1]] = 0
                 new_objcodes.remove(obc)
 
@@ -440,8 +505,8 @@ class RoiProcessor:
                 classif_df.loc[:, coln] == clname,
                 'Identifier.ObjectCode'].tolist()
             relevant_objs = np.in1d(objmask2, obcs).reshape(objmask2.shape)
-            semantic_mask[relevant_objs] = self.rcc.NUCLEUS_CODES[clname]
-        semantic_mask[semantic_mask == 0] = self.ncd['BACKGROUND']
+            semantic_mask[relevant_objs] = self.parent.rcc.NUCLEUS_CODES[clname]
+        semantic_mask[semantic_mask == 0] = self.parent.ncd['BACKGROUND']
 
         return classif_df, semantic_mask
 
@@ -455,9 +520,9 @@ class RoiProcessor:
             DataFrame indexed by nucleus code in the mask containing classif.
             probability vectors and argmaxed classification
         """
-        class2supercode = self.rcc.NClass2Superclass_codes
-        code2name = self.rcc.RNUCLEUS_CODES
-        supercode2name = self.rcc.RSUPERNUCLEUS_CODES
+        class2supercode = self.parent.rcc.NClass2Superclass_codes
+        code2name = self.parent.rcc.RNUCLEUS_CODES
+        supercode2name = self.parent.rcc.RSUPERNUCLEUS_CODES
 
         if objcodes is None:
             objcodes = np.array(unique_nonzero(objmask))
@@ -553,20 +618,20 @@ class RoiProcessor:
         since they are commonly elongated and watershed cuts them up!
         """
         ssegmask = npred.copy()
-        ssegmask[ssegmask == self.ncd['BACKGROUND']] = 0
+        ssegmask[ssegmask == self.parent.ncd['BACKGROUND']] = 0
         lbls = unique_nonzero(ssegmask)
         # get PRELIMINARY object mask and codes -- uses watershed
         npred_binary = ssegmask.copy()
         npred_binary = 0 + (npred_binary > 0)
         objmask, objcodes = get_objects_from_binmask(
             binmask=npred_binary, open_first=True,
-            minpixels=self.min_nucl_size ** 2,
-            maxpixels=self.max_nucl_size ** 2,
+            minpixels=self.parent.min_nucl_size ** 2,
+            maxpixels=self.parent.max_nucl_size ** 2,
             mindist=5, use_watershed=True,
         )
 
         # maybe this ROI only has watershed classes
-        no_watershed = set(lbls).intersection(self.no_watershed_lbls)
+        no_watershed = set(lbls).intersection(self.parent.no_watershed_lbls)
         if len(no_watershed) < 1:
             return objmask, objcodes.tolist()
 
@@ -594,8 +659,8 @@ class RoiProcessor:
         # object mask for classes where we don't like watershed (fibroblasts)
         objmask2, _ = get_objects_from_binmask(
             binmask=binmask_subset, open_first=True,
-            minpixels=self.min_nucl_size ** 2,
-            maxpixels=self.max_nucl_size ** 2,
+            minpixels=self.parent.min_nucl_size ** 2,
+            maxpixels=self.parent.max_nucl_size ** 2,
             mindist=5, use_watershed=False,
         )
         # merge the two object masks
@@ -611,10 +676,10 @@ class RoiProcessor:
         """Get hres ignore mask with discard edges."""
         if ignore is None:
             ignore = torch.zeros(
-                (self.roi_side_hres, self.roi_side_hres),
-                dtype=bool, device=self.device)
-        if self.discard_edge_hres > 0:
-            de = self.discard_edge_hres
+                (self.parent.roi_side_hres, self.parent.roi_side_hres),
+                dtype=bool, device=self.parent.device)
+        if self.parent.discard_edge_hres > 0:
+            de = self.parent.discard_edge_hres
             ignore[:de, :] = True
             ignore[-de:, :] = True
             ignore[:, :de] = True
@@ -622,46 +687,16 @@ class RoiProcessor:
 
         return ignore
 
-    def _prep_batchdata(self, rgb: Image, lres_ignore=None):
-        """Prep tensor batch data for MuTILs model inference."""
-        # prep batch tensors
-        batchdata = []
-        for aug in range(self.ntta + 1):
-            # maybe apply test-time augmentation
-            rgb1 = rgb.copy()
-            if aug > 0:
-                rgb1, _ = self.dltransforms(rgb1, {})
-            # resize low resolution rgb to desired mpp
-            lres_rgb1 = rgb1.resize(
-                (self.roi_side_lres, self.roi_side_lres), Image.LANCZOS)
-            # tensorize
-            rgb1, _ = pil2tensor(rgb1, {})
-            lres_rgb1, _ = pil2tensor(lres_rgb1, {})
-            bd = {
-                'highres_rgb': rgb1[None, ...],
-                'lowres_rgb': lres_rgb1[None, ...],
-            }
-            if lres_ignore is not None:
-                ignore = torch.as_tensor(lres_ignore, dtype=torch.float32)
-                bd['lowres_ignore'] = ignore[None, None, ...]
-            batchdata.append(bd)
-        # move all to device
-        batchdata = [
-            {k: v.to(self.device) for k, v in bd.items()} for bd in batchdata
-        ]
-        return batchdata
-
-
     @collect_errors()
     def _maybe_save_nuclei_annotation(self, classif_df):
         """
         Save nuclei locations annotation.
         """
-        if not self.save_annotations:
+        if not self.parent.save_annotations:
             return
         # TODO: consider removing pandas dataframes from this function
         # fix coords to wsi base magnification
-        left, top, _, _ = self._roicoords
+        left, top, _, _ = self.parent._roicoords
         colmap = {
             'Identifier.CentroidX': 'x',
             'Identifier.CentroidY': 'y',
@@ -671,7 +706,7 @@ class RoiProcessor:
         df = classif_df.loc[:, list(colmap.keys())].copy()
         df.rename(columns=colmap, inplace=True)
         # df.loc[:, ['x', 'y']] *= self.hres_mpp / self._slide.base_mpp
-        df[['x', 'y']] = df[['x', 'y']].astype(float) * (self.hres_mpp / self._slide.base_mpp)
+        df[['x', 'y']] = df[['x', 'y']].astype(float) * (self.parent.hres_mpp / self.parent._slide.base_mpp)
         df.loc[:, 'x'] += left
         df.loc[:, 'y'] += top
 
@@ -680,16 +715,16 @@ class RoiProcessor:
     @collect_errors()
     def _maybe_save_roi_preds(self, rgb, preds):
         """Save masks, metadata, etc."""
-        if self.save_wsi_mask:
+        if self.parent.save_wsi_mask:
             mask = preds['combined_mask'].copy()
             imwrite(
-                opj(self._savedir, 'roiMasks', self._roiname + '.png'), mask
+                opj(self.parent._savedir, 'roiMasks', self.parent._roiname + '.png'), mask
             )
         self._maybe_visualize_roi(
             rgb, mask=preds['combined_mask'], sstroma=preds['sstroma'])
-        if self.save_nuclei_meta:
+        if self.parent.save_nuclei_meta:
             preds['classif_df'].to_csv(
-                opj(self._savedir, 'nucleiMeta', self._roiname + '.csv'),
+                opj(self.parent._savedir, 'nucleiMeta', self.parent._roiname + '.csv'),
             )
         self._maybe_save_nuclei_props(rgb=rgb, preds=preds)
         self._maybe_save_nuclei_annotation(preds['classif_df'])
@@ -699,7 +734,7 @@ class RoiProcessor:
         """
         Plot and save roi visualization.
         """
-        if not self._debug:
+        if not self.parent._debug:
             return
 
         _, ax = plt.subplots(1, 2, figsize=(7. * 2, 7.))
@@ -709,23 +744,22 @@ class RoiProcessor:
             cmap=ListedColormap([[0.01, 0.74, 0.25]]),
         )
         ax[1].imshow(
-            gvcm(mask), cmap=self.VisConfigs.COMBINED_CMAP,
+            gvcm(mask), cmap=self.parent.VisConfigs.COMBINED_CMAP,
             interpolation='nearest')
         plt.tight_layout(pad=0.4)
-        plt.savefig(opj(self._savedir, 'roiVis', self._roiname + '.png'))
+        plt.savefig(opj(self.parent._savedir, 'roiVis', self.parent._roiname + '.png'))
         plt.close()
 
     @collect_errors()
     def _maybe_save_nuclei_props(self, rgb, preds):
         """Get and save nuclear morphometric features."""
-        if not self.save_nuclei_props:
+        if not self.parent.save_nuclei_props:
             return
         # self.logger.info(self._rmonitor + ": getting nuclei props ..")
         props = self.get_nuclei_props_df(rgb=np.uint8(rgb), preds=preds)
         props.to_csv(
-            opj(self._savedir, 'nucleiProps', self._roiname + '.csv'),
+            opj(self.parent._savedir, 'nucleiProps', self.parent._roiname + '.csv'),
         )
-
 
     @staticmethod
     def _simplify_roi_preds(preds):
@@ -748,33 +782,33 @@ class RoiProcessor:
         nusumm, nmetrics = self._get_nuclei_metrics(
             preds['cldf'], rstroma_count=rgsumm['pixelCount_AnyStroma'])
         metrics.update(nmetrics)
-        left, top, right, bottom = self._roicoords
+        left, top, right, bottom = self.parent._roicoords
         meta = {
-            'slide_name': self._sldname,
-            'roi_id': self._rid,
-            'roi_name': self._roiname,
+            'slide_name': self.parent._sldname,
+            'roi_id': self.parent._rid,
+            'roi_name': self.parent._roiname,
             'wsi_left': left,
             'wsi_top': top,
             'wsi_right': right,
             'wsi_bottom': bottom,
-            'mpp': self.hres_mpp,
-            'model_name': self._modelname,
+            'mpp': self.parent.hres_mpp,
+            'model_name': self.parent._modelname,
             'metrics': metrics,
             'region_summary': rgsumm,
             'nuclei_summary': nusumm,
         }
         save_json(meta, path=opj(
-            self._savedir, 'roiMeta', self._roiname + '.json'))
+            self.parent._savedir, 'roiMeta', self.parent._roiname + '.json'))
         
     def _get_region_metrics(self, mask, sstroma):
         """
         Summarize region mask and some metrics.
         """
         # pixel summaries
-        out = summarize_region_mask(mask, rcd=self.rcd)
-        out['pixelCount_EXCLUDE'] -= self.n_edge_pixels_discarded
+        out = summarize_region_mask(mask, rcd=self.parent.rcd)
+        out['pixelCount_EXCLUDE'] -= self.parent.n_edge_pixels_discarded
         # isolate salient tils
-        salient_tils = mask == self.rcd['TILS']
+        salient_tils = mask == self.parent.rcd['TILS']
         salient_tils[~sstroma] = False
         p = 'pixelCount'
         out.update({
@@ -791,7 +825,7 @@ class RoiProcessor:
         # summarize metrics
         p = 'pixelCount'
         everything = nrois * (
-                (self.roi_side_hres ** 2) - self.n_edge_pixels_discarded)
+                (self.parent.roi_side_hres ** 2) - self.parent.n_edge_pixels_discarded)
         junk = out[f'{p}_JUNK'] + out[f'{p}_WHITE'] + out[f'{p}_EXCLUDE']
         nonjunk = everything - junk
         anystroma = out[f'{p}_STROMA'] + out[f'{p}_TILS']
@@ -820,7 +854,7 @@ class RoiProcessor:
         Summarize nuclei mask and some metrics.
         """
         out = summarize_nuclei_mask(
-            cldf.loc[:, 'Classif.StandardClass'].to_dict(), ncd=self.ncd)
+            cldf.loc[:, 'Classif.StandardClass'].to_dict(), ncd=self.parent.ncd)
 
         return self._nuclei_metrics(out, rstroma_count)
     
@@ -847,12 +881,12 @@ class RoiProcessor:
     def _save_nuclei_locs_hui_style(self, df):
         """Save nuclei centroids annotation HistomicsUI style."""
         anndoc = {
-            'name': f"nucleiLocs_{self._roiname}",
+            'name': f"nucleiLocs_{self.parent._roiname}",
             'description': 'Nuclei centroids.',
             'elements': self._df_to_points_list_hui_style(df),
         }
         savename = opj(
-            self._savedir, 'annotations', f'nucleiLocs_{self._roiname}.json')
+            self.parent._savedir, 'annotations', f'nucleiLocs_{self.parent._roiname}.json')
         save_json(anndoc, path=savename)
 
     def _df_to_points_list_hui_style(self, df):
@@ -870,7 +904,7 @@ class RoiProcessor:
 
         df.loc[:, 'lineColor'] = df.loc[:, 'StandardClass'].map({
             cls: self._huicolor(col)
-            for cls, col in self.VisConfigs.NUCLEUS_COLORS.items()
+            for cls, col in self.parent.VisConfigs.NUCLEUS_COLORS.items()
         })
         records = (
                 "{'type': 'point', " f"'group': '"
