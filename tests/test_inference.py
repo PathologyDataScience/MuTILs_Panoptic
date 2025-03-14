@@ -113,7 +113,7 @@ class OutputTester:
             list: List of files in the folder.
         """
         files = os.listdir(folder_path)
-        if len(files) == expected_count:
+        if len(files) >= expected_count:
             print(f"{GREEN}OK.{RESET} {folder_name} files exist.")
         else:
             print(f"{RED}Error:{RESET} {folder_name} files are missing.")

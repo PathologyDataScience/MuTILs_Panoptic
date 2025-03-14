@@ -11,6 +11,7 @@ MODELS_BASE_DIR=$(echo $models_path | cut -d'/' -f1,2)
 
 docker run \
     --name MutilsTest \
+    --gpus '"device=3,4,5,6,7"' \
     --rm \
     -it \
     -v $BASE_DIR/MuTILs_Panoptic:/home/MuTILs_Panoptic \
@@ -18,6 +19,7 @@ docker run \
     -v $BASE_DIR/MuTILs_Panoptic/tests/output:/home/output \
     -v $SLIDE_BASE_DIR:$SLIDE_BASE_DIR \
     -v $MODELS_BASE_DIR:$MODELS_BASE_DIR \
+    --ulimit core=0 \
     szolgyen/mutils:v1 \
     bash -c "source /home/MuTILs_Panoptic/tests/.bashrc $slide_path $models_path && bash"
 
