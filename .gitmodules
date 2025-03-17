@@ -1,3 +1,10 @@
 [submodule "histolab"]
 	path = histolab
 	url = https://github.com/szolgyen/histolab/
+[submodule "HistomicsTK"]
+	path = HistomicsTK
+	url = https://github.com/szolgyen/HistomicsTK.git
+	path = histomicstk
+	url = https://github.com/szolgyen/HistomicsTK.git
+	path = histomicstk
+	url = https://github.com/szolgyen/HistomicsTK.git
