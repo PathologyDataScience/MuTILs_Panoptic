@@ -12,6 +12,7 @@ import logging
 import pyvips
 import time
 import argparse
+from itertools import zip_longest
 
 # histolab
 from histolab.slide import SlideSet
@@ -62,6 +63,7 @@ class MuTILsWSIRunner:
             vlres_scorer_kws: dict,
             roi_kmeans_kvp: dict,
             topk_rois_sampling_mode: str,
+            independent_tile_assignment: bool,
             # color normalization & augmentation
             cnorm: bool,
             cnorm_kwargs: dict,
@@ -121,6 +123,7 @@ class MuTILsWSIRunner:
         self.discard_edge_hres = discard_edge_hres
         self.roi_clust_mpp = roi_clust_mpp
         self.topk_rois = topk_rois
+        self.independent_tile_assignment = independent_tile_assignment
         # parsing nuclei from inference
         self.no_watershed_nucleus_classes = no_watershed_nucleus_classes or [
             'StromalCellNOS', 'ActiveStromalCellNOS']
@@ -348,21 +351,17 @@ class MuTILsWSIRunner:
         model_rois : dict
             A dictionary containing the model names as keys and a list of ROI id numbers as values.
         """
-        number_to_fold = [(roi_number, model) for model, rois in model_rois.items() for roi_number in rois]
-
-        # shuffle the list of numbers to fold
-        np.random.seed(42)
-        np.random.shuffle(number_to_fold)
+        model_roi_pairs = self._model_roi_pairing(model_rois)
 
         if self._debug:
             self.N_CPUs = 2
-            number_of_rois_to_process = 4 #16
-            number_to_fold = number_to_fold[:number_of_rois_to_process]
+            number_of_rois_to_process = 4
+            model_roi_pairs = model_roi_pairs[:number_of_rois_to_process]
 
         self.logger.info(f"Number of CPUs to use: {self.N_CPUs}")
-        self.logger.info(f"Number of ROIs to use: {len(number_to_fold)}")
+        self.logger.info(f"Number of ROIs to use: {len(model_roi_pairs)}")
         
-        roi_chunks = [number_to_fold[i::self.N_CPUs] for i in range(self.N_CPUs)]
+        roi_chunks = [model_roi_pairs[i::self.N_CPUs] for i in range(self.N_CPUs)]
 
         mp.set_start_method("spawn", force=True)
 
@@ -503,6 +502,36 @@ class MuTILsWSIRunner:
         return score
 
     # HELPERS --------------------------------------------------------------------------------------
+
+    def _model_roi_pairing(self, model_rois: dict) -> list:
+        """ Assign rois to trained model folds (as a form of ensembling).
+        
+        Parameters
+        ----------
+        model_rois : dict
+            A dictionary containing the model names as keys and a list of ROI id numbers as values.
+            
+        Returns
+        -------
+        list
+            A list of tuples, each containing the id number of a ROI and the model which dedicated to
+            do the inference on it.
+        """
+        models = list(model_rois.keys())
+        rois_lists = [model_rois[model] for model in models]
+
+        # Zip rois_lists, padding with None if lists have different lengths
+        zipped = zip_longest(*rois_lists)
+
+        # Flatten and pair roi with model
+        model_roi_pairs = [
+            (roi_number, models[i])
+            for group in zipped
+            for i, roi_number in enumerate(group)
+            if roi_number is not None  # filter out None if lists are unequal
+        ]
+
+        return model_roi_pairs
 
     @property
     def _roicoords(self):
@@ -739,8 +768,22 @@ class MuTILsWSIRunner:
         # get topk rois, stratified by superpixel in vlres adjacency image
         df = self._assign_rois_to_rag()
         top_idxs = self._pick_topk_rois_from_rag(df)
-        df.loc[top_idxs, 'model'] = df.loc[:, 'rag'] % self.n_models
-
+        if self.independent_tile_assignment:
+            # Stratified grid-like assignment of rois to models
+            # -> Multiple models can be assigned to the same "superpixel"
+            # This is a good arrangement when you don't care about "fusing"
+            # the mask from multiple adjacent tiles and you only care about
+            # each tile independently (eg. TIL score frome each tile)
+            df.loc[top_idxs, 'model'] = [
+                i % self.n_models for i in range(len(top_idxs))]
+        else:
+            # Smart assignment based on region adjacency to reduce edge artif.
+            # (eg model overcalling tumor vs another overcalling stroma)
+            # -> Each "superpixel" gets only one model assigned to it
+            # This is a good arrangement when you care about fusing the mask
+            # from multiple tiles to get whole-slide region polygons for
+            # research assessment
+            df.loc[top_idxs, 'model'] = df.loc[:, 'rag'] % self.n_models
         return df
 
     def _pick_topk_rois_from_rag(self, full_df):

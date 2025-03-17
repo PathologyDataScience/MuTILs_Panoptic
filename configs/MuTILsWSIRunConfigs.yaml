@@ -21,7 +21,7 @@ model_paths:
 # Output saving options
 ## ----------------------------------------------------------------
 save_wsi_mask: True
-save_annotations: True
+save_annotations: False
 save_nuclei_meta: True
 save_nuclei_props: True
 
@@ -42,6 +42,7 @@ roi_kmeans_kvp: null                    # null or custom dict of:
 #   compactness: 10
 #   threshold: 9
 topk_rois_sampling_mode: "stratified"   # or "weighted"
+independent_tile_assignment: True
 # color normalization & augmentation
 cnorm: True
 cnorm_kwargs: null
