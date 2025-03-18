@@ -452,8 +452,10 @@ class MuTILsWSIRunner:
         nrois = len(_mrois)
         for rno, _rid in enumerate(_mrois):
 
-            if self._debug and rno > 1:
-                break
+            if self._debug: 
+                _rid = rno
+                if rno > 1:
+                    break
 
             self._rmonitor = f"{self._mdmonitor}: roi {rno + 1} of {nrois}"
             collect_errors.monitor = self._rmonitor
