@@ -12,6 +12,7 @@ import logging
 import pyvips
 import time
 import argparse
+import threading
 from itertools import zip_longest
 
 # histolab
@@ -343,6 +344,30 @@ class MuTILsWSIRunner:
         except Exception as e:
             collect_errors(f"Error in process_chunk: {str(e)}")
 
+    @staticmethod
+    def start_process(chunk_id: int, chunk: list, config: RoiProcessorConfig, processes: list):
+        """ Starts a new process for a chunk of ROIs.
+
+        Parameters
+        ----------
+        chunk_id : int
+            The id of the chunk.
+        chunk : list
+            List of tuples, each containing the id number of a ROI and the model which dedicated to
+            do the inference on it.
+        config : RoiProcessorConfig
+            The configuration object containing parameters for the RoiProcessor.
+        processes : list
+            A list of processes.
+        """
+        p = mp.Process(
+            target=MuTILsWSIRunner.process_chunk,
+            args=(chunk, chunk_id),
+            kwargs={"config": config}
+        )
+        p.start()
+        processes.append(p)
+
     def run_parallel_models(self, model_rois: dict):
         """Runs multiple chunks of ROIs in parallel using multiprocessing.
 
@@ -365,6 +390,7 @@ class MuTILsWSIRunner:
 
         mp.set_start_method("spawn", force=True)
 
+        threads = []
         processes = []
 
         config = RoiProcessorConfig(
@@ -395,14 +421,14 @@ class MuTILsWSIRunner:
                         save_annotations=self.save_annotations
                     )
 
+        # Start all process simultaneouly in separate threads
         for chunk_id, chunk in enumerate(roi_chunks):
-            p = mp.Process(
-                target=MuTILsWSIRunner.process_chunk, 
-                args=(chunk, chunk_id),
-                kwargs={"config": config}
-            )
-            p.start()
-            processes.append(p)
+            t = threading.Thread(target=self.start_process, args=(chunk_id, chunk, config, processes))
+            t.start()
+            threads.append(t)
+
+        for t in threads:
+            t.join()
 
         for p in processes:
             p.join()
