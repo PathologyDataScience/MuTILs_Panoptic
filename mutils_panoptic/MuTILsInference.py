@@ -10,6 +10,7 @@ from matplotlib.colors import ListedColormap
 from pandas import DataFrame, concat
 from skimage.morphology import binary_dilation
 from dataclasses import dataclass
+from skimage.measure import regionprops
 
 # histolab
 from histolab.util import np_to_pil
@@ -325,7 +326,7 @@ class RoiPostProcessor(RoiProcessor):
             inference['hpf_nuclei'], return_probabs=True)
         objmask, objcodes = self._get_nuclei_objects_mask(npred)
         objmask[hres_ignore] = 0
-        objmask, objcodes = self._remove_small_objects(objmask, objcodes)
+        objmask, objcodes = self._remove_small_objects(objmask)
 
         if len(objcodes) < 2:
             return
@@ -453,24 +454,40 @@ class RoiPostProcessor(RoiProcessor):
 
         return combined
 
-    def _remove_small_objects(self, objmask, objcodes):
-        """Remove objects with a side less then min. Important!"""
-        new_objcodes = objcodes.copy()
-        for obc in objcodes:
-            yx = cy_argwhere.cy_argwhere2d(objmask == obc)
-            if yx.shape[0] < self.parent.min_nucl_size ** 2:
-                objmask[yx[:, 0], yx[:, 1]] = 0
-                new_objcodes.remove(obc)
-                continue
-            ymin, xmin = yx.min(0)
-            ymax, xmax = yx.max(0)
-            width = xmax - xmin
-            height = ymax - ymin
-            if (width < self.parent.min_nucl_size) or (height < self.parent.min_nucl_size):
-                objmask[yx[:, 0], yx[:, 1]] = 0
-                new_objcodes.remove(obc)
+    def _remove_small_objects(self, objmask: np.array) -> tuple:
+        """Remove objects with a side less then min. Important!
+        
+        Parameters:
+        ----------
+        objmask: np.array
+            Object mask with labels.
+            
+        Returns:
+        -------
+        tuple
+            Tuple containing the updated object mask and object codes.
+        """
+        # Compute region properties for each labeled object
+        regions = regionprops(objmask)
 
-        return objmask, new_objcodes
+        for region in regions:
+            
+            # Get bounding box and compute width/height
+            minr, minc, maxr, maxc = region.bbox
+            width = maxc - minc
+            height = maxr - minr
+
+            # Check area and size thresholds
+            if (region.area < self.parent.min_nucl_size ** 2) or \
+            (width < self.parent.min_nucl_size) or \
+            (height < self.parent.min_nucl_size):
+
+                coords = region.coords  # shape (N, 2): row (y), col (x)
+                objmask[coords[:, 0], coords[:, 1]] = 0  # Zero out the object
+
+        objcodes = unique_nonzero(objmask)
+
+        return objmask, objcodes
 
     def _refactor_nuclear_hpf_mask(
             self, semantic_probabs, objmask, objcodes=None):
