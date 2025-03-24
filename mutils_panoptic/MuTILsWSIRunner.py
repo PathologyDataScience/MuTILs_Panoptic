@@ -1,4 +1,5 @@
 import os
+import sys
 from os.path import join as opj
 import numpy as np
 import matplotlib.pylab as plt
@@ -69,7 +70,7 @@ class MuTILsWSIRunner:
             cnorm: bool,
             cnorm_kwargs: dict,
             maskout_regions_for_cnorm: list,
-            ntta: int, 
+            ntta: int,
             dltransforms: transform_dlinput,
             # misc params
             valid_extensions: list,
@@ -178,15 +179,15 @@ class MuTILsWSIRunner:
         # test-time color augmentation (0 = no augmentation)
         self.ntta = ntta
         self.dltransforms = dltransforms or transform_dlinput(
-            tlist=['augment_stain'], 
+            tlist=['augment_stain'],
             make_tensor=False,
-            augment_stain_sigma1=0.75, 
+            augment_stain_sigma1=0.75,
             augment_stain_sigma2=0.75,
         )
         # intra-tumoral stroma (saliency)
         self.filter_stromal_whitespace = filter_stromal_whitespace
         self.min_tumor_for_saliency = min_tumor_for_saliency
-        self.max_salient_stroma_distance = max_salient_stroma_distance    
+        self.max_salient_stroma_distance = max_salient_stroma_distance
         self.topk_salient_rois = topk_salient_rois
         if topk_rois is not None:
             assert topk_salient_rois <= topk_rois, (
@@ -220,7 +221,7 @@ class MuTILsWSIRunner:
         self.n_models = len(model_paths)
 
         self.check_gpus()
-    
+
 # ==================================================================================================
 
     def check_gpus(self):
@@ -241,7 +242,7 @@ class MuTILsWSIRunner:
             self.logger.info("No GPU available, using CPU instead.")
             use_gpus = False
         self.logger.info("------------------------------------------------------")
-        
+
         self.use_gpus = use_gpus
 
     def load_model(self, model_path: str=None, device_id: str=None) -> torch.nn.Module:
@@ -329,7 +330,7 @@ class MuTILsWSIRunner:
     @staticmethod
     def process_chunk(chunk: list, chunk_id: int, config: RoiProcessorConfig):
         """Processes a chunk of ROIs.
-        
+
         Parameters
         ----------
         chunk : list
@@ -338,11 +339,8 @@ class MuTILsWSIRunner:
         config : RoiProcessorConfig
             The configuration object containing parameters for the RoiProcessor.
         """
-        try:
-            roi_processor = RoiProcessor(config)
-            roi_processor.run(chunk, chunk_id)
-        except Exception as e:
-            collect_errors(f"Error in process_chunk: {str(e)}")
+        roi_processor = RoiProcessor(config)
+        roi_processor.run(chunk, chunk_id)
 
     @staticmethod
     def start_process(chunk_id: int, chunk: list, config: RoiProcessorConfig, processes: list):
@@ -385,7 +383,7 @@ class MuTILsWSIRunner:
 
         self.logger.info(f"Number of CPUs to use: {self.N_CPUs}")
         self.logger.info(f"Number of ROIs to use: {len(model_roi_pairs)}")
-        
+
         roi_chunks = [model_roi_pairs[i::self.N_CPUs] for i in range(self.N_CPUs)]
 
         mp.set_start_method("spawn", force=True)
@@ -430,6 +428,39 @@ class MuTILsWSIRunner:
         for t in threads:
             t.join()
 
+        try:
+            while True:
+                all_done = True
+                for p in processes:
+                    if p.exitcode is None:
+                        all_done = False
+                    elif p.exitcode != 0:
+                        self.logger.error(f"Process {p.pid} failed with exit code {p.exitcode}")
+                        # Terminate all other processes
+                        for other_p in processes:
+                            if other_p.is_alive():
+                                self.logger.info(f"Terminating process {other_p.pid}")
+                                other_p.terminate()
+                        # Clean up and exit
+                        for p in processes:
+                            p.join()
+                        self.logger.error(f"Process {p.pid} failed, shutting down the pipeline.")
+                        self._maybe_merge_logs()
+                        sys.exit(1)
+
+                if all_done:
+                    self.logger.info("All processes completed successfully.")
+                    break
+
+                time.sleep(0.1)  # Polling interval
+
+        except KeyboardInterrupt:
+            self.logger.error("Keyboard interrupt detected. Terminating all processes.")
+            for p in processes:
+                p.terminate()
+            self._maybe_merge_logs()
+            sys.exit(1)
+
         for p in processes:
             p.join()
 
@@ -440,10 +471,10 @@ class MuTILsWSIRunner:
         model_path = self.model_paths[_modelname]
         if torch.cuda.is_available():
             model = self.load_model(model_path, device_id=0)
-            device = str(0) 
+            device = str(0)
         else:
             model = self.load_model(model_path)
-            device = "cpu" 
+            device = "cpu"
         models = {_modelname: {"model": model, "device": device}}
         # create roi processor
         config = RoiProcessorConfig(
@@ -478,7 +509,7 @@ class MuTILsWSIRunner:
         nrois = len(_mrois)
         for rno, _rid in enumerate(_mrois):
 
-            if self._debug: 
+            if self._debug:
                 _rid = rno
                 if rno > 1:
                     break
@@ -533,12 +564,12 @@ class MuTILsWSIRunner:
 
     def _model_roi_pairing(self, model_rois: dict) -> list:
         """ Assign rois to trained model folds (as a form of ensembling).
-        
+
         Parameters
         ----------
         model_rois : dict
             A dictionary containing the model names as keys and a list of ROI id numbers as values.
-            
+
         Returns
         -------
         list
@@ -1170,18 +1201,18 @@ class MuTILsWSIRunner:
     def _get_latest_logfile(directory, pattern: str="MuTILsWSIRunner_2*"):
         """
         Returns the latest (most recently modified) file in the directory.
-        
+
         Args:
             directory (str): Path to the directory.
             pattern (str): Pattern to match files.
-        
+
         Returns:
             str: Path to the latest file, or None if no files are found.
         """
         files = glob(os.path.join(directory, pattern))
         if not files:
             return None
-        
+
         latest_file = max(files, key=os.path.getmtime)
         return latest_file
 
