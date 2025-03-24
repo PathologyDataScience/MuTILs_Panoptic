@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import matplotlib.pylab as plt
 import ast
+import sys
 from os.path import join as opj
 from PIL import Image
 from imageio import imwrite
@@ -61,7 +62,7 @@ class RoiProcessorConfig:
     save_wsi_mask: bool
     save_nuclei_meta: bool
     save_nuclei_props: bool
-    save_annotations: bool      
+    save_annotations: bool
 
 class RoiProcessor:
     def __init__(self, config: RoiProcessorConfig):
@@ -78,14 +79,14 @@ class RoiProcessor:
             self.rcd[reg] for reg in self.maskout_regions_for_cnorm]
         self.n_edge_pixels_discarded = 4 * self.discard_edge_hres * (
             self.roi_side_hres - self.discard_edge_hres)
-        
+
         self.preprocessor = RoiPreProcessor(self)
         self.inferenceprocessor = RoiInferenceProcessor(self)
         self.postprocessor = RoiPostProcessor(self)
 
     def run(self, rois: list, chunk_id: int=None) -> None:
         """Run model over multiple rois.
-        
+
         Parameters:
         ----------
         rois: list
@@ -96,13 +97,15 @@ class RoiProcessor:
         """
         if chunk_id is not None:
             self.logger = get_configured_logger(logdir="/home/output/LOGS", prefix=f'MuTILsWSIRunner_chunk{chunk_id}', tofile=True)
+            collect_errors.logger = self.logger
 
         for roi in rois:
             self.run_roi(roi)
 
+    @collect_errors()
     def run_roi(self, roi: tuple) -> None:
         """Run model over a single roi.
-        
+
         Parameters:
         ----------
         roi: tuple
@@ -118,13 +121,32 @@ class RoiProcessor:
         self.set_device()
 
         # Get tile
-        tile = self.get_tile()
+        try:
+            tile = self.get_tile()
+        except Exception as e:
+            self.logger.error(f"Error getting tile for ROI {self._rid}: {e}")
+            sys.exit(1)
         # Run preprocessing
-        rgb, batch, hres_ignore = self.preprocessor.run(tile)
+        try:
+            rgb, batch, hres_ignore = self.preprocessor.run(tile)
+        except Exception as e:
+            self.logger.error(f"Error preprocessing ROI {self._rid}: {e}")
+            torch.cuda.empty_cache()
+            sys.exit(1)
         # Run inference
-        inference = self.inferenceprocessor.run(batch)
+        try:
+            inference = self.inferenceprocessor.run(batch)
+        except Exception as e:
+            self.logger.error(f"Error running inference for ROI {self._rid}: {e}")
+            torch.cuda.empty_cache()
+            sys.exit(1)
         # Run postprocessing
-        self.postprocessor.run(inference, hres_ignore, rgb)
+        try:
+            self.postprocessor.run(inference, hres_ignore, rgb)
+        except Exception as e:
+            self.logger.error(f"Error postprocessing ROI {self._rid}: {e}")
+            torch.cuda.empty_cache()
+            sys.exit(1)
 
     def set_device(self) -> None:
         """Set device to run model on."""
@@ -139,7 +161,7 @@ class RoiProcessor:
     def get_tile(self) -> Tile:
         """Get tile for the current ROI."""
         return self._slide.extract_tile(
-            coords=self._top_rois[self._rid][1], 
+            coords=self._top_rois[self._rid][1],
             mpp=self.hres_mpp,
             tile_size=(self.roi_side_hres, self.roi_side_hres),
         )
@@ -147,23 +169,23 @@ class RoiProcessor:
     @property
     def _roicoords(self):
         return [int(j) for j in self._top_rois[self._rid][1]]
-    
+
     @staticmethod
     def _bounds2str(left, top, right, bottom):
         return f"_left-{left}_top-{top}_right-{right}_bottom-{bottom}"
-    
+
 class RoiPreProcessor(RoiProcessor):
     def __init__(self, parent: RoiProcessor):
         self.parent = parent
 
     def run(self, tile: Tile) -> tuple:
         """Run preprocessing for the ROI.
-        
+
         Parameters:
         ----------
         tile: Tile
             Tile object containing the ROI image.
-            
+
         Returns:
         -------
         tuple
@@ -172,12 +194,12 @@ class RoiPreProcessor(RoiProcessor):
         hres_ignore, lres_ignore = self.get_tile_ignore(tile)
         rgb = self.maybe_color_normalize(tile.image.convert('RGB'), mask_out=hres_ignore)
         batch = self.prep_batchdata(rgb, lres_ignore)
-        
+
         return rgb, batch, hres_ignore
 
     def get_tile_ignore(self, tile: Tile, filter_tissue=False, get_lres=True) -> tuple:
         """Get region outside tissue (eg. marker pen & white space)
-        
+
         Parameters:
         ----------
         tile: Tile
@@ -186,7 +208,7 @@ class RoiPreProcessor(RoiProcessor):
             Whether to filter tissue or not.
         get_lres: bool
             Whether to get low resolution ignore mask or not.
-            
+
         Returns:
         -------
         tuple
@@ -209,14 +231,14 @@ class RoiPreProcessor(RoiProcessor):
 
     def maybe_color_normalize(self, rgb: Image, mask_out=None) -> Image:
         """Color normalize image if needed.
-        
+
         Parameters:
         ----------
         rgb: Image
             RGB image to color normalize.
         mask_out: np.array
             Mask to ignore regions for color normalization.
-            
+
         Returns:
         -------
         Image
@@ -228,7 +250,7 @@ class RoiPreProcessor(RoiProcessor):
             rgb = np_to_pil(rgb)
 
         return rgb
-  
+
     def prep_batchdata(self, rgb: Image, lres_ignore=None) -> list:
         """Prep tensor batch data for MuTILs model inference."""
         # prep batch tensors
@@ -265,12 +287,12 @@ class RoiInferenceProcessor(RoiProcessor):
     @torch.no_grad()
     def run(self, batchdata: list) -> dict:
         """Do MuTILs model inference.
-        
+
         Parameters:
         ----------
         batchdata: list
             List containing the batch data.
-            
+
         Returns:
         -------
         dict
@@ -456,12 +478,12 @@ class RoiPostProcessor(RoiProcessor):
 
     def _remove_small_objects(self, objmask: np.array) -> tuple:
         """Remove objects with a side less then min. Important!
-        
+
         Parameters:
         ----------
         objmask: np.array
             Object mask with labels.
-            
+
         Returns:
         -------
         tuple
@@ -471,7 +493,7 @@ class RoiPostProcessor(RoiProcessor):
         regions = regionprops(objmask)
 
         for region in regions:
-            
+
             # Get bounding box and compute width/height
             minr, minc, maxr, maxc = region.bbox
             width = maxc - minc
@@ -816,7 +838,7 @@ class RoiPostProcessor(RoiProcessor):
         }
         save_json(meta, path=opj(
             self.parent._savedir, 'roiMeta', self.parent._roiname + '.json'))
-        
+
     def _get_region_metrics(self, mask, sstroma):
         """
         Summarize region mask and some metrics.
@@ -834,7 +856,7 @@ class RoiPostProcessor(RoiProcessor):
         })
 
         return self._region_metrics(out)
-    
+
     def _region_metrics(self, out: dict, nrois=1):
         """
         Given pixel count summary, summarize region metrics
@@ -865,7 +887,7 @@ class RoiPostProcessor(RoiProcessor):
         }
 
         return out, metrics
-    
+
     def _get_nuclei_metrics(self, cldf, rstroma_count):
         """
         Summarize nuclei mask and some metrics.
@@ -874,7 +896,7 @@ class RoiPostProcessor(RoiProcessor):
             cldf.loc[:, 'Classif.StandardClass'].to_dict(), ncd=self.parent.ncd)
 
         return self._nuclei_metrics(out, rstroma_count)
-    
+
     @staticmethod
     def _nuclei_metrics(out: dict, rst_count):
         """
@@ -939,7 +961,7 @@ class RoiPostProcessor(RoiProcessor):
         records = records.apply(lambda x: ast.literal_eval(x)).to_list()
 
         return records
-    
+
     @staticmethod
     def _huicolor(col):
         return f"rgb({','.join(str(int(j)) for j in col)})"
