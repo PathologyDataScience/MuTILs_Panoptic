@@ -334,6 +334,10 @@ class RoiPostProcessor(RoiProcessor):
             RGB image of the ROI.
         """
         preds = self.refactor_inference(inference, hres_ignore=hres_ignore)
+        if preds is None:
+            self.parent.logger.info(f"ROI {self.parent._rid} has no nuclei!")
+            return
+
         preds['sstroma'] = self.get_salient_stroma_mask(preds['combined_mask'][..., 0])
         self._maybe_save_roi_preds(rgb=rgb, preds=preds)
         preds = self._simplify_roi_preds(preds)
@@ -356,6 +360,10 @@ class RoiPostProcessor(RoiProcessor):
         npred, npred_probab = logits2preds(
             inference['hpf_nuclei'], return_probabs=True)
         objmask, objcodes = self._get_nuclei_objects_mask(npred)
+
+        if len(objcodes) < 1:
+            return
+
         objmask[hres_ignore] = 0
         objmask, objcodes = self._remove_small_objects(objmask)
 
@@ -681,6 +689,9 @@ class RoiPostProcessor(RoiProcessor):
         # maybe this ROI only has watershed classes
         no_watershed = set(lbls).intersection(self.parent.no_watershed_lbls)
         if len(no_watershed) < 1:
+            return objmask, objcodes.tolist()
+
+        if len(objcodes) < 1:
             return objmask, objcodes.tolist()
 
         # This array holds the PRELIMINARY pixel count for each nucleus (rows)
