@@ -65,6 +65,7 @@ class RoiProcessorConfig:
     save_annotations: bool
 
 class RoiProcessor:
+    _logger = None
     def __init__(self, config: RoiProcessorConfig):
         self.__dict__.update(config.__dict__)
 
@@ -165,6 +166,14 @@ class RoiProcessor:
             mpp=self.hres_mpp,
             tile_size=(self.roi_side_hres, self.roi_side_hres),
         )
+
+    @property
+    def logger(self):
+        return self._logger
+
+    @logger.setter
+    def logger(self, logger):
+        self._logger = logger
 
     @property
     def _roicoords(self):

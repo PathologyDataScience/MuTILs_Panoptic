@@ -518,6 +518,7 @@ class MuTILsWSIRunner:
             collect_errors.monitor = self._rmonitor
             self.logger.info(self._rmonitor)
             roi_id_and_model_name = [_rid, _modelname]
+            roi_processor.logger = self.logger
             roi_processor.run_roi(roi_id_and_model_name)
 
     def tile_scorer_by_tissue_ratio(self, tile: Tile):
