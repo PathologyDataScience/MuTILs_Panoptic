@@ -14,7 +14,7 @@ import pyvips
 import time
 import argparse
 import threading
-from itertools import zip_longest
+import random
 
 # histolab
 from histolab.slide import SlideSet
@@ -274,7 +274,7 @@ class MuTILsWSIRunner:
         self.models = {}
         i = 0
         for model_name, model_path in self.model_paths.items():
-            device_id = str(i) if torch.cuda.is_available() else None 
+            device_id = str(i) if torch.cuda.is_available() else None
             i += 1
             model = self.load_model(model_path, device_id)
             self.models[model_name] = {"model": model, "device": device_id}
@@ -374,17 +374,20 @@ class MuTILsWSIRunner:
         model_rois : dict
             A dictionary containing the model names as keys and a list of ROI id numbers as values.
         """
-        model_roi_pairs = self._model_roi_pairing(model_rois)
+        model_roi_pairs = [(roi_id, model_name) for model_name in model_rois.keys() \
+                           for roi_id in model_rois[model_name]]
+        random.seed(42)
+        random.shuffle(model_roi_pairs)
+        roi_chunks = [model_roi_pairs[i::self.N_CPUs] for i in range(self.N_CPUs)]
 
         if self._debug:
             self.N_CPUs = 2
             number_of_rois_to_process = 4
-            model_roi_pairs = model_roi_pairs[:number_of_rois_to_process]
+            roi_chunks = [chunk[:number_of_rois_to_process] for chunk in roi_chunks[:self.N_CPUs]]
 
         self.logger.info(f"Number of CPUs to use: {self.N_CPUs}")
-        self.logger.info(f"Number of ROIs to use: {len(model_roi_pairs)}")
-
-        roi_chunks = [model_roi_pairs[i::self.N_CPUs] for i in range(self.N_CPUs)]
+        _number_of_rois_to_process = sum(len(chunk) for chunk in roi_chunks)
+        self.logger.info(f"Number of ROIs to use: {_number_of_rois_to_process}")
 
         mp.set_start_method("spawn", force=True)
 
@@ -562,37 +565,6 @@ class MuTILsWSIRunner:
         return score
 
     # HELPERS --------------------------------------------------------------------------------------
-
-    def _model_roi_pairing(self, model_rois: dict) -> list:
-        """ Assign rois to trained model folds (as a form of ensembling).
-
-        Parameters
-        ----------
-        model_rois : dict
-            A dictionary containing the model names as keys and a list of ROI id numbers as values.
-
-        Returns
-        -------
-        list
-            A list of tuples, each containing the id number of a ROI and the model which dedicated to
-            do the inference on it.
-        """
-        models = list(model_rois.keys())
-        rois_lists = [model_rois[model] for model in models]
-
-        # Zip rois_lists, padding with None if lists have different lengths
-        zipped = zip_longest(*rois_lists)
-
-        # Flatten and pair roi with model
-        model_roi_pairs = [
-            (roi_number, models[i])
-            for group in zipped
-            for i, roi_number in enumerate(group)
-            if roi_number is not None  # filter out None if lists are unequal
-        ]
-
-        return model_roi_pairs
-
     @property
     def _roicoords(self):
         return [int(j) for j in self._top_rois[self._rid][1]]
