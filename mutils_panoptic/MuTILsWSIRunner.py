@@ -29,7 +29,6 @@ from histomicstk.preprocessing.color_deconvolution import color_deconvolution_ro
 
 # mutils
 from MuTILs_Panoptic.configs.MuTILsWSIRunConfigs import RunConfigs
-from MuTILs_Panoptic.utils.TorchUtils import transform_dlinput
 from MuTILs_Panoptic.utils.MiscRegionUtils import get_objects_from_binmask, numpy2vips
 from MuTILs_Panoptic.utils.MiscRegionUtils import load_trained_mutils_model
 from MuTILs_Panoptic.mutils_panoptic.MuTILsInference import RoiProcessorConfig, RoiProcessor
@@ -43,126 +42,60 @@ collect_errors = CollectErrors()
 class MuTILsWSIRunner:
     """ Run the MuTILs pipeline for a set of slides. """
 
-    def __init__(
-            self,
-            # paths
-            model_configs,
-            model_paths: dict,
-            slides_path: str,
-            base_savedir: str,
-            *,
-            monitor="",
-            # what (not) to save
-            save_wsi_mask: bool,
-            save_annotations: bool,
-            save_nuclei_meta: bool,
-            save_nuclei_props: bool,
-            # roi size and scoring
-            roi_side_hres: int,
-            discard_edge_hres: int,
-            roi_clust_mpp: int,
-            topk_rois: int,
-            vlres_scorer_kws: dict,
-            roi_kmeans_kvp: dict,
-            topk_rois_sampling_mode: str,
-            independent_tile_assignment: bool,
-            # color normalization & augmentation
-            cnorm: bool,
-            cnorm_kwargs: dict,
-            maskout_regions_for_cnorm: list,
-            ntta: int,
-            dltransforms: transform_dlinput,
-            # misc params
-            valid_extensions: list,
-            keep_slides: list,
-            logger: logging.Logger,
-            N_SUBSETS: int,
-            N_CPUs: int,
-            # intra-tumoral stroma (saliency)
-            filter_stromal_whitespace: bool,
-            min_tumor_for_saliency: int,
-            max_salient_stroma_distance: int,
-            topk_salient_rois: int,
-            # parsing nuclei from inference
-            no_watershed_nucleus_classes: list,
-            min_nucl_size: int,
-            max_nucl_size: int,
-            nprops_kwargs: dict,
-            # internal
-            _debug: bool,
-            _reverse: bool,
-        ):
+    def __init__(self, config):
         # paths
-        self.model_configs = model_configs
-        self.model_paths = model_paths
-        self.slides_path = slides_path
-        self.base_savedir = opj(base_savedir, 'perSlideResults')
-        os.makedirs(self.base_savedir, exist_ok=True)
+        self.model_paths = config.model_paths
+        self.slides_path = config.slides_path
+        self.base_savedir = config.base_savedir
         # what (not) to save
-        self._monitor = monitor
-        self.save_wsi_mask = save_wsi_mask
-        self.save_annotations = save_annotations
-        self.save_nuclei_meta = save_nuclei_meta
-        self.save_nuclei_props = save_nuclei_props
+        self._monitor = config.monitor
+        self.save_wsi_mask = config.save_wsi_mask
+        self.save_annotations = config.save_annotations
+        self.save_nuclei_meta = config.save_nuclei_meta
+        self.save_nuclei_props = config.save_nuclei_props
         # slides to analyse
-        self._reverse = _reverse
+        # self._reverse = _reverse
+        # TODO: Take SlideSet out from here!
         self.slides = SlideSet(
-            slides_path=slides_path,
+            slides_path=self.slides_path,
             processed_path=self.base_savedir,
-            valid_extensions=valid_extensions or [
-                '.tif', '.tiff',  # tils challenge
-                '.svs',  # TCGA
-                '.scn',  # CPS cohorts
-                '.ndpi',  # new cps scans
-                '.mrxs',  # NHS breast
-            ],
-            keep_slides=keep_slides,
-            reverse=self._reverse,
+            valid_extensions=config.valid_extensions,
+            keep_slides=config.slide_names,
+            reverse=False,
             slide_kwargs={'use_largeimage': True},
         )
         # roi size and scoring
-        self.roi_side_hres = roi_side_hres
-        self.discard_edge_hres = discard_edge_hres
-        self.roi_clust_mpp = roi_clust_mpp
-        self.topk_rois = topk_rois
-        self.independent_tile_assignment = independent_tile_assignment
+        self.roi_side_hres = config.roi_side_hres
+        self.discard_edge_hres = config.discard_edge_hres
+        self.roi_clust_mpp = config.roi_clust_mpp
+        self.topk_rois = config.topk_rois
+        self.independent_tile_assignment = config.independent_tile_assignment
         # parsing nuclei from inference
-        self.no_watershed_nucleus_classes = no_watershed_nucleus_classes or [
-            'StromalCellNOS', 'ActiveStromalCellNOS']
-        self.min_nucl_size = min_nucl_size
-        self.max_nucl_size = max_nucl_size
-        self.nprops_kwargs = nprops_kwargs or dict(
-            fsd_bnd_pts=128, fsd_freq_bins=6, cyto_width=8,
-            num_glcm_levels=32,
-            morphometry_features_flag=True,
-            fsd_features_flag=True,
-            intensity_features_flag=True,
-            gradient_features_flag=True,
-            haralick_features_flag=True
-        )
+        self.no_watershed_nucleus_classes = config.no_watershed_nucleus_classes
+        self.min_nucl_size = config.min_nucl_size
+        self.max_nucl_size = config.max_nucl_size
+        self.nprops_kwargs = config.nprops_kwargs
         # color normalization & augmentation
-        self.cnorm = cnorm
-        self.cnorm_kwargs = cnorm_kwargs or {
-            'W_target': np.array([
-                [0.5807549, 0.08314027, 0.08213795],
-                [0.71681094, 0.90081588, 0.41999816],
-                [0.38588316, 0.42616716, -0.90380025]
-            ]),
-            'stain_unmixing_routine_params': {
-                'stains': ['hematoxylin', 'eosin'],
-                'stain_unmixing_method': 'macenko_pca',
-            },
-        }
-        self.maskout_regions_for_cnorm = maskout_regions_for_cnorm or ['BLOOD', 'WHITE', 'EXCLUDE']
+        self.cnorm = config.cnorm
+        self.cnorm_kwargs = config.cnorm_kwargs
+        self.maskout_regions_for_cnorm = config.maskout_regions_for_cnorm
         # config shorthands
-        self._set_convenience_cfg_shorthand()
-        self._fix_mutils_params()
+        self.mtp = config.mtp
+        self.rcc = config.rcc
+        self.rcd = config.rcd
+        self.ncd = config.ncd
+        self.no_watershed_lbls = config.no_watershed_lbls
+        self.maskout_region_codes = config.maskout_region_codes
+        self.hres_mpp = config.hres_mpp
+        self.lres_mpp = config.lres_mpp
+        self.vlres_mpp = config.vlres_mpp
+        self.h2l = config.h2l
+        self.h2vl = config.h2vl
+        self.roi_side_lres = config.roi_side_lres
+        self.roi_side_vlres = config.roi_side_vlres
+        self.n_edge_pixels_discarded = config.n_edge_pixels_discarded
         # vlres cellularity scorer & roi clustering
-        self.vlres_scorer_kws = vlres_scorer_kws or {
-            'check_tissue': True,
-            'tissue_percent': 50,
-            'pixel_overlap': int(2 * self.discard_edge_hres * self.h2vl),
-        }
+        self.vlres_scorer_kws = config.vlres_scorer_kws
         self.vlres_scorer_kws.update({
             'scorer': (
                 self.tile_scorer_by_tissue_ratio if self.topk_rois is None
@@ -172,28 +105,16 @@ class MuTILsWSIRunner:
             'n_tiles': 0,  # ALL tiles
             'mpp': self.vlres_mpp,
         })
-        self.roi_kmeans_kvp = roi_kmeans_kvp or {
-            'n_segments': 128, 'compactness': 10, 'threshold': 9}
-        assert topk_rois_sampling_mode in ("stratified", "weighted", "sorted")
-        self._topk_rois_sampling_mode = topk_rois_sampling_mode
+        self.roi_kmeans_kvp = config.roi_kmeans_kvp
+        self._topk_rois_sampling_mode = config.topk_rois_sampling_mode
         # test-time color augmentation (0 = no augmentation)
-        self.ntta = ntta
-        self.dltransforms = dltransforms or transform_dlinput(
-            tlist=['augment_stain'],
-            make_tensor=False,
-            augment_stain_sigma1=0.75,
-            augment_stain_sigma2=0.75,
-        )
+        self.ntta = config.ntta
+        self.dltransforms = config.dltransforms
         # intra-tumoral stroma (saliency)
-        self.filter_stromal_whitespace = filter_stromal_whitespace
-        self.min_tumor_for_saliency = min_tumor_for_saliency
-        self.max_salient_stroma_distance = max_salient_stroma_distance
-        self.topk_salient_rois = topk_salient_rois
-        if topk_rois is not None:
-            assert topk_salient_rois <= topk_rois, (
-                "The no. of salient ROIs used for final TILs scoring must be "
-                "less than the total no. of rois that we do inference on!"
-            )
+        self.filter_stromal_whitespace = config.filter_stromal_whitespace
+        self.min_tumor_for_saliency = config.min_tumor_for_saliency
+        self.max_salient_stroma_distance = config.max_salient_stroma_distance
+        self.topk_salient_rois = config.topk_salient_rois
         # internal properties that change with slide/roi/hpf (convenience)
         self._slide = None
         self._sldname = None
@@ -207,25 +128,22 @@ class MuTILsWSIRunner:
         self._hpf = None
         self._hid = None
         self._hpfname = None
-
-        self._debug = _debug
+        self._debug = config._debug
         # misc params
-        self.N_CPUs = N_CPUs
-        self.logger = logger or logging.getLogger(__name__)
+        self.N_CPUs = config.N_CPUs
+        self.logger = config.logger or logging.getLogger(__name__)
         collect_errors.logger = self.logger
         collect_errors._debug = self._debug
         # model ensembles
-        assert all(os.path.isfile(j) for j in model_paths.values()), \
-            "Some of the models weight files do not exist!"
-        self.model_paths = model_paths
-        self.n_models = len(model_paths)
+        self.model_paths = config.model_paths
+        self.n_models = len(config.model_paths)
 
         self.check_gpus()
 
 # ==================================================================================================
 
     def check_gpus(self):
-        """Check if GPUs are available. Set self.use_gpus accordingly: True if at least 5 GPUs are 
+        """Check if GPUs are available. Set self.use_gpus accordingly: True if at least 5 GPUs are
         available, False otherwise.
         """
         self.logger.info("--- Checking GPUs ------------------------------------")
@@ -302,8 +220,6 @@ class MuTILsWSIRunner:
         # when running slides in reverse order, strictly avoid running on
         # any slide if its director already exists to prevent conflicts
         self._savedir = opj(self.base_savedir, self._sldname)
-        if self._reverse and os.path.exists(self._savedir):
-            return
 
         # This must be OUTSIDE self.run_slide() for error collection
         self._set_sldmeta()
@@ -1128,37 +1044,6 @@ class MuTILsWSIRunner:
             'outputs': [],
         }
 
-    def _set_convenience_cfg_shorthand(self):
-        """Convenience shorthand."""
-        self.mtp = self.model_configs.MuTILsParams
-        self.rcc = self.model_configs.RegionCellCombination
-        self.rcd = self.model_configs.RegionCellCombination.REGION_CODES
-        self.ncd = self.model_configs.RegionCellCombination.NUCLEUS_CODES
-        self.no_watershed_lbls = {
-            self.ncd[cls] for cls in self.no_watershed_nucleus_classes}
-        self.maskout_region_codes = [
-            self.rcd[reg] for reg in self.maskout_regions_for_cnorm]
-
-    def _fix_mutils_params(self):
-        """params that must be true for inference"""
-        # magnification & size settings
-        self.hres_mpp = self.mtp.model_params['hpf_mpp']
-        self.lres_mpp = self.mtp.model_params['roi_mpp']
-        self.vlres_mpp = 2 * self.lres_mpp
-        self.h2l = self.hres_mpp / self.lres_mpp
-        self.h2vl = self.hres_mpp / self.vlres_mpp
-        self.roi_side_lres = int(self.h2l * self.roi_side_hres)
-        self.roi_side_vlres = int(self.h2vl * self.roi_side_hres)
-        self.n_edge_pixels_discarded = 4 * self.discard_edge_hres * (
-            self.roi_side_hres - self.discard_edge_hres)
-        # MuTILs params
-        self.mtp.model_params.update({
-            'training': False,
-            'roi_side': self.roi_side_lres,
-            'hpf_side': self.roi_side_hres,  # predict all nuclei in roi
-            'topk_hpf': 1,
-        })
-
     @staticmethod
     def _ksums(records, ks: list, k0=None):
         """Get sum of some value (eg pixels) from multiple rois."""
@@ -1217,36 +1102,17 @@ if __name__ == "__main__":
 
     start = time.time()
 
-    parser = argparse.ArgumentParser(description='Run MuTILsWSI model.')
-    parser.add_argument('-s', '--subsets', type=int, default=[0], nargs='+')
-    parser.add_argument('-r', '--reverse', type=int, default=0)
-    ARGS = parser.parse_args()
+    # Get the configuration
+    runconfig = RunConfigs()
+    config = runconfig.get_config()
 
-    RunConfigs.initialize()
+    config.logger.info("------------------------------------------------------")
+    config.logger.info("          *** STARTING MUTILSWSIRUNNER ***            ")
+    config.logger.info("------------------------------------------------------")
 
-    for subset in ARGS.subsets:
+    # Set up the MuTILsWSIRunner
+    runner = MuTILsWSIRunner(config)
 
-        logging.info('Entered the for loop with param: %s out of %s subsets', subset, ARGS.subsets)
-
-        monitor = (
-                f"{'(DEBUG)' if RunConfigs.RUN_KWARGS['_debug'] else ''}"
-                f"SUBSET: {subset}"
-                f"{'(reverse)' if ARGS.reverse else ''}"
-                ": "
-            )
-
-        SLIDENAMES = RunConfigs.SLIDENAMES[subset]
-
-        if ARGS.reverse:
-            SLIDENAMES.reverse()
-
-        runner = MuTILsWSIRunner(
-            **RunConfigs.RUN_KWARGS,
-            monitor=monitor,
-            keep_slides=SLIDENAMES,
-            _reverse=bool(ARGS.reverse)
-        )
-
-        runner.run_all_slides()
+    runner.run_all_slides()
 
     logging.info(f"Total runtime of MuTILsWSI: {np.around(time.time() - start, decimals=2)} seconds")

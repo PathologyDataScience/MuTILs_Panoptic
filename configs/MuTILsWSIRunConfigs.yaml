@@ -1,9 +1,4 @@
 ## ----------------------------------------------------------------
-# The configuration file for running the MuTILs pipeline on WSI data
-## ----------------------------------------------------------------
-model_configs: 'panoptic_model_configs.py'
-
-## ----------------------------------------------------------------
 # Input paths - fixed
 # mount the container to these paths in the docker compose yaml file
 ## ----------------------------------------------------------------
@@ -20,65 +15,13 @@ model_paths:
 ## ----------------------------------------------------------------
 # Output saving options
 ## ----------------------------------------------------------------
-save_wsi_mask: True
+save_wsi_mask: False
 save_annotations: False
 save_nuclei_meta: True
 save_nuclei_props: True
 
 ## ----------------------------------------------------------------
-# Inference configurations
-## ----------------------------------------------------------------
-# roi size and scoring
-roi_side_hres: 1024
-discard_edge_hres: 0
-roi_clust_mpp: 20.0  # 0.5x
-topk_rois: null
-vlres_scorer_kws: null                  # null or custom dict of:
-#   check_tissue: True
-#   tissue_percent: 25
-#   pixel_overlap: 0
-roi_kmeans_kvp: null                    # null or custom dict of:
-#   n_segments: 128
-#   compactness: 10
-#   threshold: 9
-topk_rois_sampling_mode: "stratified"   # or "weighted"
-independent_tile_assignment: True
-# color normalization & augmentation
-cnorm: True
-cnorm_kwargs: null
-maskout_regions_for_cnorm: null         # null or list of:
-  # - BLOOD 
-  # - WHITE
-  # - EXCLUDE
-ntta: 0
-dltransforms: null
-# misc params
-valid_extensions: null
-# intra-tumoral stroma (saliency)
-filter_stromal_whitespace: False
-min_tumor_for_saliency: 4
-max_salient_stroma_distance: 64
-topk_salient_rois: 64
-# parsing nuclei from inference
-no_watershed_nucleus_classes: null    # null or list of:
-  # - StromalCellNOS
-  # - ActiveStromalCellNOS
-min_nucl_size: 5
-max_nucl_size: 90
-nprops_kwargs: null                   # null or custom dict of:
-  # fsd_bnd_pts: 128
-  # fsd_freq_bins: 6 
-  # cyto_width: 8
-  # num_glcm_levels: 32
-  # morphometry_features_flag: True
-  # fsd_features_flag: True
-  # intensity_features_flag: True
-  # gradient_features_flag: True
-  # haralick_features_flag: True
-
-## ----------------------------------------------------------------
 # Run configurations
 ## ----------------------------------------------------------------
-N_SUBSETS: 1
-N_CPUs: 10
+N_CPUs: 15
 _debug: True
