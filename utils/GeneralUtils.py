@@ -13,6 +13,7 @@ from typing import Union, Iterable
 from pandas import DataFrame, read_csv, concat, json_normalize
 import warnings
 from sklearn.metrics import matthews_corrcoef
+import torch
 
 # from os.path import join as opj
 # from shutil import copyfile, SameFileError
@@ -29,6 +30,7 @@ class CollectErrors:
     See: https://stackoverflow.com/questions/30904486/ ...
         python-wrapper-function-taking-arguments-inside-decorator
     """
+
     def __init__(self, logger=None, monitor="", debug=False):
         self.msgs = []
         self.logger = logger or logging.getLogger(__name__)
@@ -53,19 +55,22 @@ class CollectErrors:
                     return func(*args, **kwargs)
                 except Exception as err:
                     self.logger.error(func.__name__ + "(): " + err.__repr__())
-                    self.msgs.append({
-                        'monitor': self.monitor,
-                        'func': func.__name__,
-                        'traceback': traceback.format_exception(
-                            None, err, err.__traceback__),
-                    })
+                    self.msgs.append(
+                        {
+                            "monitor": self.monitor,
+                            "func": func.__name__,
+                            "traceback": traceback.format_exception(
+                                None, err, err.__traceback__
+                            ),
+                        }
+                    )
 
             return inner_wrapper
 
         return outer_wrapper
 
 
-def drop_duplicate_indices_for_df(df: DataFrame, keep='first') -> DataFrame:
+def drop_duplicate_indices_for_df(df: DataFrame, keep="first") -> DataFrame:
     return df[~df.index.duplicated(keep=keep)]
 
 
@@ -89,9 +94,7 @@ def append_row_to_df_or_create_it(where: str, df: DataFrame):
         return
 
     # columns in saved df but not this row
-    ordered_existing_cols = list(
-        read_csv(where, nrows=1, index_col=0).columns
-    )
+    ordered_existing_cols = list(read_csv(where, nrows=1, index_col=0).columns)
     existing_cols = set(ordered_existing_cols)
     cols_to_append = set(df.columns)
     missing_cols = existing_cols.difference(cols_to_append)
@@ -105,7 +108,7 @@ def append_row_to_df_or_create_it(where: str, df: DataFrame):
 
     if len(extra_cols) == 0:
         # just append to existing df
-        df.to_csv(where, header=False, mode='a')
+        df.to_csv(where, header=False, mode="a")
     else:
         # read, concat, then save whole thing
         df = concat([read_csv(where, index_col=0), df], axis=0)
@@ -137,44 +140,45 @@ def calculate_4x4_statistics(TP, FP, FN, TN=None, add_eps_to_tn=True):
         FN += ep
     TN = 0 if TN is None else TN
 
-    stats = {'total': TP + FP + FN + TN}
-    stats.update({
-        'TP': TP,
-        'FP': FP,
-        'FN': FN,
-        'accuracy': (TP + TN) / stats['total'],
-        'precision': TP / (TP + FP),
-        'recall': TP / (TP + FN),
-    })
+    stats = {"total": TP + FP + FN + TN}
+    stats.update(
+        {
+            "TP": TP,
+            "FP": FP,
+            "FN": FN,
+            "accuracy": (TP + TN) / stats["total"],
+            "precision": TP / (TP + FP),
+            "recall": TP / (TP + FN),
+        }
+    )
     # add synonyms
-    stats.update({
-        'TPR': stats['recall'],
-        'sensitivity': stats['recall'],
-        'F1': (2 * stats['precision'] * stats['recall']) / (
-                stats['precision'] + stats['recall']),
-    })
+    stats.update(
+        {
+            "TPR": stats["recall"],
+            "sensitivity": stats["recall"],
+            "F1": (2 * stats["precision"] * stats["recall"])
+            / (stats["precision"] + stats["recall"]),
+        }
+    )
     if TN >= 0:
         if TN == 0:
             if add_eps_to_tn:
                 TN += ep
             else:
                 return stats
-        stats.update({
-            'TN': TN,
-            'specificity': TN / (TN + FP)
-        })
+        stats.update({"TN": TN, "specificity": TN / (TN + FP)})
         # add synonyms
-        stats['TNR'] = stats['specificity']
+        stats["TNR"] = stats["specificity"]
 
         # mathiew's correlation coefficient
         numer = TP * TN - FP * FN
         denom = np.sqrt((TP + FP) * (TP + FN) * (TN + FP) * (TN + FN))
-        stats['MCC'] = numer / denom
+        stats["MCC"] = numer / denom
 
     return stats
 
 
-def flatten_dict(d: MutableMapping, sep: str = '.') -> MutableMapping:
+def flatten_dict(d: MutableMapping, sep: str = ".") -> MutableMapping:
     """Flatten a dictionary so that there are no nested dicts.
 
     Source:
@@ -194,7 +198,7 @@ def flatten_dict(d: MutableMapping, sep: str = '.') -> MutableMapping:
     MutableMapping
 
     """
-    [flat_dict] = json_normalize(d, sep=sep).to_dict(orient='records')
+    [flat_dict] = json_normalize(d, sep=sep).to_dict(orient="records")
 
     return flat_dict
 
@@ -204,7 +208,7 @@ def splitlist(lst, sz):
     Split list into equal-ish portions each of size sz.
     https://stackoverflow.com/questions/4119070/how-to-divide-a-list-into-n-equal-parts-python
     """
-    return [lst[i:i+sz] for i in range(0, len(lst), sz)]
+    return [lst[i : i + sz] for i in range(0, len(lst), sz)]
 
 
 def _divnonan(numer, denom):
@@ -228,7 +232,7 @@ def combs_with_unique_products(low, high, k):
             prods.add(prod)
 
 
-def save_json(what, path: str, mode='w', indent=4):
+def save_json(what, path: str, mode="w", indent=4):
     with open(path, mode) as f:
         json.dump(what, f, indent=indent)
 
@@ -259,7 +263,7 @@ def write_or_append_json_list(what: dict, path: str, indent=4):
         position = file.tell() - 2
         file.seek(position)
         tmp = json.dumps(what, indent=indent)
-        ind = indent * ' '
+        ind = indent * " "
         tmp = ind + tmp.replace("\n", f"\n{ind}")
         file.write(",\n{}\n]".format(tmp))
 
@@ -297,9 +301,9 @@ def abserr(ypred, ytrue):
     return np.abs(ypred - ytrue)
 
 
-def load_configs(configs_path, assign_name='cfg'):
+def load_configs(configs_path, assign_name="cfg"):
     """See: https://stackoverflow.com/questions/67631/how-to-import-a- ...
-     ... module-given-the-full-path"""
+    ... module-given-the-full-path"""
     # noinspection PyArgumentList
     return SourceFileLoader(assign_name, configs_path).load_module()
 
@@ -363,9 +367,7 @@ def isGPUDevice():
 
 
 # noinspection PyPep8Naming
-def AllocateGPU(
-        N_GPUs=1, GPUs_to_use=None, TOTAL_GPUS=4,
-        verbose=True, N_trials=0):
+def AllocateGPU(N_GPUs=1, GPUs_to_use=None, TOTAL_GPUS=4, verbose=True, N_trials=0):
     """Restrict GPU use to a set number or name.
     Args:
         N_GPUs - int, number of GPUs to restrict to.
@@ -377,7 +379,7 @@ def AllocateGPU(
     # only restrict if not a GPU machine or already restricted
     isGPU = isGPUDevice()
 
-    assert TOTAL_GPUS == 4, 'Only 4-GPU machines supported for now.'
+    assert TOTAL_GPUS == 4, "Only 4-GPU machines supported for now."
 
     try:
         AlreadyRestricted = os.environ["CUDA_VISIBLE_DEVICES"] is not None
@@ -396,13 +398,12 @@ def AllocateGPU(
 
                 # Get processes from nvidia-smi command
                 gpuprocesses = str(
-                    subprocess.check_output("nvidia-smi", shell=True)) \
-                    .split('\\n')
+                    subprocess.check_output("nvidia-smi", shell=True)
+                ).split("\\n")
                 # Parse out numbers, representing GPU no, PID and memory use
                 start = 24
-                gpuprocesses = gpuprocesses[start:len(gpuprocesses) - 2]
-                gpuprocesses = [j.split('MiB')[0] for i, j in
-                                enumerate(gpuprocesses)]
+                gpuprocesses = gpuprocesses[start : len(gpuprocesses) - 2]
+                gpuprocesses = [j.split("MiB")[0] for i, j in enumerate(gpuprocesses)]
 
                 # Add "fake" zero-memory processes to represent all GPUs
                 extrapids = np.zeros([TOTAL_GPUS, 3])
@@ -410,8 +411,7 @@ def AllocateGPU(
 
                 PIDs = []
                 for p in range(len(gpuprocesses)):
-                    pid = [int(s) for s in gpuprocesses[p].split() if
-                           s.isdigit()]
+                    pid = [int(s) for s in gpuprocesses[p].split() if s.isdigit()]
                     if len(pid) > 0:
                         PIDs.append(pid)
                 # PIDs.pop(0)
@@ -450,8 +450,7 @@ def AllocateGPU(
                 N = N_trials + 1
                 AllocateGPU(N_GPUs=N_GPUs, N_trials=N)
             else:
-                raise ValueError(
-                    "Something is wrong, tried too many times and failed.")
+                raise ValueError("Something is wrong, tried too many times and failed.")
 
     else:
         if verbose:
@@ -463,7 +462,8 @@ def AllocateGPU(
 
 # noinspection PyPep8Naming
 def Merge_dict_with_default(
-        dict_given: dict, dict_default: dict, keys_Needed: list = None):
+    dict_given: dict, dict_default: dict, keys_Needed: list = None
+):
     """Sets default values of dict keys not given"""
 
     keys_default = list(dict_default.keys())
@@ -489,8 +489,9 @@ def file_len(fname: str):
     https://stackoverflow.com/questions/845058/how-to-get-line-count-cheaply-in-python
     """
     try:
-        p = subprocess.Popen(['wc', '-l', fname], stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE)
+        p = subprocess.Popen(
+            ["wc", "-l", fname], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
         result, err = p.communicate()
         if p.returncode != 0:
             raise IOError(err)
@@ -512,15 +513,18 @@ def kill_all_nvidia_processes():
     and you kill the kernel or it dies).
     """
 
-    input("Killing all gpu processes .. continue?" +
-          "Press any button to continue, or Ctrl+C to quit ...")
+    input(
+        "Killing all gpu processes .. continue?"
+        + "Press any button to continue, or Ctrl+C to quit ..."
+    )
 
     # get gpu processes -- note that this
     # gets processes even if they don't show up
     # in the nvidia-smi command (which happens
     # often with tensorflow)
-    gpuprocesses = str(subprocess.check_output(
-        "fuser -v /dev/nvidia*", shell=True)).split('\\n')
+    gpuprocesses = str(
+        subprocess.check_output("fuser -v /dev/nvidia*", shell=True)
+    ).split("\\n")
 
     # preprocess process list
     gpuprocesses = gpuprocesses[0].split(" ")[1:]
@@ -528,10 +532,10 @@ def kill_all_nvidia_processes():
         gpuprocesses[-1] = gpuprocesses[-1].split("'")[0]
 
     # put into string form
-    gpuprocesses_str = '{'
+    gpuprocesses_str = "{"
     for pr in gpuprocesses:
-        gpuprocesses_str += str(pr) + ','
-    gpuprocesses_str += '}'
+        gpuprocesses_str += str(pr) + ","
+    gpuprocesses_str += "}"
 
     # now kill
     kill_command = "kill -9 %s" % gpuprocesses_str
@@ -539,3 +543,16 @@ def kill_all_nvidia_processes():
 
     print("killed the following processes: " + gpuprocesses_str)
 
+
+def move_to_cpu_recursive(obj):
+    """Recursively move tensors to CPU and convert to numpy arrays."""
+    if isinstance(obj, torch.Tensor):
+        return obj.detach().cpu().numpy()
+    elif isinstance(obj, dict):
+        return {k: move_to_cpu_recursive(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [move_to_cpu_recursive(v) for v in obj]
+    elif isinstance(obj, tuple):
+        return tuple(move_to_cpu_recursive(v) for v in obj)
+    else:
+        return obj
