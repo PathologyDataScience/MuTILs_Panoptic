@@ -23,5 +23,6 @@ save_nuclei_props: True
 ## ----------------------------------------------------------------
 # Run configurations
 ## ----------------------------------------------------------------
-N_CPUs: 15
-_debug: True
+N_preprocesses: 10
+N_postprocesses: 40
+_debug: False
