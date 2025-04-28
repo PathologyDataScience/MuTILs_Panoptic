@@ -270,15 +270,23 @@ class ROIInferenceProcessor:
 
     def inference(self, roi: ROI):
 
-        highres_rgb = torch.as_tensor(roi.batch.highres_rgb, dtype=torch.float32)
-        lowres_rgb = torch.as_tensor(roi.batch.lowres_rgb, dtype=torch.float32)
-        lowres_ignore = torch.as_tensor(roi.batch.lowres_ignore, dtype=torch.float32)
+        device = f"cuda:{self.gpu_id}" if torch.cuda.is_available() else "cpu"
+
+        highres_rgb = torch.as_tensor(
+            roi.batch.highres_rgb, dtype=torch.float32, device=device
+        )
+        lowres_rgb = torch.as_tensor(
+            roi.batch.lowres_rgb, dtype=torch.float32, device=device
+        )
+        lowres_ignore = torch.as_tensor(
+            roi.batch.lowres_ignore, dtype=torch.float32, device=device
+        )
 
         batchdata = [
             {
-                "highres_rgb": highres_rgb.to(f"cuda:{self.gpu_id}"),
-                "lowres_rgb": lowres_rgb.to(f"cuda:{self.gpu_id}"),
-                "lowres_ignore": lowres_ignore.to(f"cuda:{self.gpu_id}"),
+                "highres_rgb": highres_rgb,
+                "lowres_rgb": lowres_rgb,
+                "lowres_ignore": lowres_ignore,
             }
         ]
 
