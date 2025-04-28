@@ -184,6 +184,8 @@ class ProcessManager:
 
         Parameters
         ----------
+        process_number : int
+            The process number for logging.
         postprocess_queue : mp.Queue
             The queue for passing the inference results to the postprocessing process.
         configs : dict
@@ -461,7 +463,9 @@ class MuTILsWSIRunner:
                 "cnorm_kwargs": self.cnorm_kwargs,
             }
             preprocessor = ROIPreProcessor(
-                worker_id=0, inference_queue=[], roi_chunk=[], configs=preproc_configs
+                inference_queue=[],
+                roi_chunk=[],
+                configs=preproc_configs,
             )
             # 2. Inference =============================================================
             inference_processor = ROIInferenceProcessor(
@@ -488,7 +492,7 @@ class MuTILsWSIRunner:
                 "_debug": self._debug,
             }
             postprocessor = ROIPostProcessor(
-                worker_id=0, postprocess_queue=[], configs=postproc_configs
+                process_number=0, postprocess_queue=[], configs=postproc_configs
             )
 
             for i, roi in enumerate(rois):
