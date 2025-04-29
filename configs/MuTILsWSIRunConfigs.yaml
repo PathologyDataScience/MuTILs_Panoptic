@@ -1,9 +1,4 @@
 ## ----------------------------------------------------------------
-# The configuration file for running the MuTILs pipeline on WSI data
-## ----------------------------------------------------------------
-model_configs: 'panoptic_model_configs.py'
-
-## ----------------------------------------------------------------
 # Input paths - fixed
 # mount the container to these paths in the docker compose yaml file
 ## ----------------------------------------------------------------
@@ -20,57 +15,14 @@ model_paths:
 ## ----------------------------------------------------------------
 # Output saving options
 ## ----------------------------------------------------------------
-save_wsi_mask: True
-save_annotations: True
+save_wsi_mask: False
+save_annotations: False
 save_nuclei_meta: True
 save_nuclei_props: True
 
 ## ----------------------------------------------------------------
-# Cohort options
-## ----------------------------------------------------------------
-restrict_to_vta: False
-COHORT: 'unknown'
-
-## ----------------------------------------------------------------
-# Inference configurations
-## ----------------------------------------------------------------
-# roi size and scoring
-roi_side_hres: 1024
-discard_edge_hres: 0
-roi_clust_mpp: 20.0  # 0.5x
-roi_kmeans_kvp: null
-# color normalization & augmentation
-cnorm: True
-cnorm_kwargs: null
-maskout_regions_for_cnorm: null
-ntta: 0
-dltransforms: null
-# intra-tumoral stroma (saliency)
-filter_stromal_whitespace: False
-min_tumor_for_saliency: 4
-max_salient_stroma_distance: 64
-# parsing nuclei from inference
-no_watershed_nucleus_classes: null
-min_nucl_size: 5
-max_nucl_size: 90
-nprops_kwargs: null
-
-## ----------------------------------------------------------------
 # Run configurations
 ## ----------------------------------------------------------------
-N_SUBSETS: 1
-_debug: True
-
-## ----------------------------------------------------------------
-## Use the following parameters to run the full cTME pipeline
-## ----------------------------------------------------------------
-grandch: False
-topk_rois: null
-topk_rois_sampling_mode: "stratified"
-topk_salient_rois: null
-
-gcpaths: null
-vlres_scorer_kws: null
-#   check_tissue: True
-#   tissue_percent: 25
-#   pixel_overlap: 0
+N_preprocesses: 10
+N_postprocesses: 40
+_debug: False
