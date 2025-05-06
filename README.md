@@ -26,6 +26,8 @@ We recommend using the <i>szolgyen/mutils:v2</i> image from Docker Hub to perfor
 
 For the list of dependencies and additional details, refer to the [Dockerfile](https://github.com/szolgyen/MuTILs_Panoptic/blob/main/Dockerfile) in this repository.
 
+>The container has a preinstalled version of MuTILs in the home folder. There is no need to clone this repository in the container.
+
 #### Pull the docker image on your GPU server:
 
 1. `docker pull szolgyen/mutils:v2`
@@ -61,9 +63,10 @@ Within the container, check and customize the configuration file at
 
 3. `/home/MuTILs_Panoptic/configs/MuTILsWSIRunConfigs.yaml`.
 
-> If not changing the parameters in the configuration file, MuTILs will run with the default parameters. The default parameters are found at [configs/MuTILsWSIRunConfigs.py](https://github.com/szolgyen/MuTILs_Panoptic/blob/520e1af15714abd9fae24cc9def5a07b5b6a6181/configs/MuTILsWSIRunConfigs.py#L145)
+> If not changing the parameters in the configuration file, MuTILs will run with the default parameters. The default parameters are found at [configs/MuTILsWSIRunConfigs.py](https://github.com/szolgyen/MuTILs_Panoptic/blob/520e1af15714abd9fae24cc9def5a07b5b6a6181/configs/MuTILsWSIRunConfigs.py#L145).<br><br>
+The code also records the configuration parameters in the run's log file for reproducibility.
 
-and run the MuTILsWSIRunner.py module to perform inference on your set of slides
+#### Run MuTILs
 
 4. `python MuTILs_Panoptic/mutils_panoptic/MuTILsWSIRunner.py`
 
@@ -88,6 +91,29 @@ Host (recommended)                      Container (default)
 └── docker-compose.yaml                     ├── MuTILs_Panoptic
                                             └── venv
 ```
+
+## Output
+
+The code creates two folders in the mounted output directory:
+   - <i>LOGS</i> - the terminal output from the running code saved as a log file. It contains information about:
+       - the configuration parameters of the run,
+       - GPU availability and which model is loaded on which GPU,
+       - slide name, and slide ROI scoring steps,
+       - ROI processing progress,
+       - duration of the process per slide and overall
+   - <i>perSlideResults</i> - results of the segmentation and feature extraction are stored here.
+       - each slide has its own folder
+       - each slide folder has the following subfolders:
+           - nucleiMeta - nucleus metadata per ROI in CSV files
+           - nucleiProps - nucleus features per ROI in CSV files
+           - roiMasks - segmentation masks per ROI
+           - roiMeta - aggregated features per ROI in a JSON file
+       - each slide folder has the following files too:
+           - *slidename*_RoiLocs.csv - ROI coordinates and scores
+           - *slidename*_RoiLocs.png - visualization of ROI locations
+           - *slidename*.json - aggregated features of the whole slide
+           - *slidename*.tif - combined segmentation mask <br>MuTILsMaskVisualizer.py can be used to convert it to a color-coded image
+
 
 ### Model weights
 
