@@ -3,9 +3,10 @@ import subprocess
 import argparse
 
 # Color codes for printing
-RED = '\033[31m'
-GREEN = '\033[32m'
-RESET = '\033[0m'
+RED = "\033[31m"
+GREEN = "\033[32m"
+RESET = "\033[0m"
+
 
 class FileCopier:
 
@@ -18,12 +19,7 @@ class FileCopier:
             slide (str): Path to the slide file.
         """
         print("Copying slide to the input folder...")
-        rsync_slide = [
-            "rsync",
-            "--info=progress2",
-            slide,
-            "/home/input/."
-        ]
+        rsync_slide = ["rsync", "--info=progress2", slide, "/home/input/."]
         subprocess.run(rsync_slide, check=True)
 
         # If MRXS slide, copy the accompanying files
@@ -32,23 +28,18 @@ class FileCopier:
             slide_name = os.path.splitext(os.path.basename(slide))[0]
             subprocess.run(["mkdir", "-p", f"/home/input/{slide_name}"])
 
-            slide_folder = slide.split('.')[0]
+            slide_folder = slide.split(".")[0]
 
             rsync_files = [
                 "rsync",
                 "--info=progress2",
                 "-r",
-                slide_folder+"/.",
-                f"/home/input/{slide_name}/."
+                slide_folder + "/.",
+                f"/home/input/{slide_name}/.",
             ]
             subprocess.run(rsync_files, check=True)
 
-        chmod = [
-            "chmod",
-            "-R",
-            "777",
-            "/home/input"
-        ]
+        chmod = ["chmod", "-R", "777", "/home/input"]
         subprocess.run(chmod, check=True)
         print("Slide copied successfully!")
 
@@ -64,6 +55,9 @@ class FileCopier:
 
         subprocess.run(["mkdir", "-p", "/home/models"])
 
+        if not models.endswith("/"):
+            models += "/"
+
         rsync_models = [
             "rsync",
             "--info=progress2",
@@ -71,10 +65,11 @@ class FileCopier:
             "--partial",
             "--append-verify",
             models,
-            "/home/models/."
+            "/home/models/.",
         ]
         subprocess.run(rsync_models, check=True)
         print("Models copied successfully!")
+
 
 class OutputTester:
 
@@ -162,7 +157,7 @@ class OutputTester:
             "nucleiProps": 2,
             "roiMasks": 2,
             "roiMeta": 2,
-            "roiVis": 2
+            "roiVis": 2,
         }
 
         # Iterate over each folder and perform checks
@@ -192,11 +187,15 @@ class OutputTester:
             else:
                 print(f"{RED}Error:{RESET} {description} is missing.")
 
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Copy a test slide to the input folder.")
+    parser = argparse.ArgumentParser(
+        description="Copy a test slide to the input folder."
+    )
     parser.add_argument("-s", "--slide", type=str, help="Path to the slide file")
     parser.add_argument("-m", "--models", type=str, help="Path to the models folder")
     return parser.parse_args()
+
 
 def run_mutils():
     """Runs the MuTILsWSIRunner.py script."""
@@ -207,6 +206,7 @@ def run_mutils():
     ]
     subprocess.run(run_mutils, check=True)
     print("MuTILsWSIRunner.py finished successfully!")
+
 
 if __name__ == "__main__":
 
