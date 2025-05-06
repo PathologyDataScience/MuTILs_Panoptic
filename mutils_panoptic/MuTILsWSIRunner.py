@@ -526,7 +526,8 @@ class MuTILsWSIRunner:
         """Check if GPUs are available. Set self.use_gpus accordingly: True if at least 5 GPUs are
         available, False otherwise.
         """
-        self.logger.info("--- Checking GPUs ------------------------------------")
+        self.logger.info("   Checking GPUs")
+        self.logger.info("")
         if torch.cuda.is_available() and (torch.cuda.device_count() > 4):
             self.logger.info(f"Number of GPUs available: {torch.cuda.device_count()}")
             self.logger.info(f"Running multiple models in parallel on multiple GPUs.")
@@ -1297,6 +1298,8 @@ if __name__ == "__main__":
     config.logger.info("------------------------------------------------------")
     config.logger.info("          *** STARTING MUTILSWSIRUNNER ***            ")
     config.logger.info("------------------------------------------------------")
+
+    runconfig.log_config()
 
     runner = MuTILsWSIRunner(config)
     runner.check_gpus()

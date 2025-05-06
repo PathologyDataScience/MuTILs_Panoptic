@@ -96,6 +96,15 @@ class RunConfigs:
         """
         return self.config
 
+    def log_config(self) -> None:
+        """Log the configuration parameters."""
+        self.config.logger.info("   Configuration Parameters:")
+        self.config.logger.info("")
+        self.config.logger.info(self.config.__dict__)
+        self.config.logger.info(
+            "------------------------------------------------------"
+        )
+
 
 def default_model_paths() -> Dict[str, str]:
     return {
