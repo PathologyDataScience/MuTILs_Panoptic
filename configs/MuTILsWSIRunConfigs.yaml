@@ -1,28 +1,15 @@
-## ----------------------------------------------------------------
-# Input paths - fixed
-# mount the container to these paths in the docker compose yaml file
-## ----------------------------------------------------------------
-slides_path: '/home/input'
-base_savedir: '/home/output'
-
-model_paths:
-  mutils_06022021-fold1: '/home/models/fold_1/mutils_06022021_fold1.pt'
-  mutils_06022021-fold2: '/home/models/fold_2/mutils_06022021_fold2.pt'
-  mutils_06022021-fold3: '/home/models/fold_3/mutils_06022021_fold3.pt'
-  mutils_06022021-fold4: '/home/models/fold_4/mutils_06022021_fold4.pt'
-  mutils_06022021-fold5: '/home/models/fold_5/mutils_06022021_fold5.pt'
-
-## ----------------------------------------------------------------
+## -------------------------------------------------------------------------------------
 # Output saving options
-## ----------------------------------------------------------------
+## -------------------------------------------------------------------------------------
 save_wsi_mask: False
 save_annotations: False
 save_nuclei_meta: True
 save_nuclei_props: True
 
-## ----------------------------------------------------------------
+## -------------------------------------------------------------------------------------
 # Run configurations
-## ----------------------------------------------------------------
+## -------------------------------------------------------------------------------------
+independent_tile_assignment: False # see line 900, MuTILsWSIRunner.py
 N_preprocesses: 10
 N_postprocesses: 40
 _debug: False

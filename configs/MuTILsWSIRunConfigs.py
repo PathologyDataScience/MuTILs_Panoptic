@@ -67,23 +67,21 @@ class RunConfigs:
         # Load configuration parameters from the YAML file
         RUN_KWARGS = ConfigParser.parse_config(configuration_file)
 
-        # Set further configuration parameters
-        RUN_KWARGS["logger"] = Logger.set_up_logger(RUN_KWARGS["base_savedir"])
-        RUN_KWARGS["slide_names"] = self.get_slide_names(RUN_KWARGS)
-
         self.config = Config(**RUN_KWARGS)
 
-    @staticmethod
-    def get_slide_names(run_kwargs: dict) -> list:
-        """Get slide names.
+        # Set further configuration parameters
+        self.config.logger = Logger.set_up_logger(
+            self.config.base_savedir.rsplit("/", 1)[0]
+        )
+        self.config.slide_names = self.get_slide_names()
 
-        Args:
-            run_kwargs (dict): Configuration dictionary.
+    def get_slide_names(self) -> list:
+        """Get slide names.
 
         Returns:
             list: List of slide names.
         """
-        all_slidenames = os.listdir(run_kwargs["slides_path"])
+        all_slidenames = os.listdir(self.config.slides_path)
         all_slidenames.sort()
 
         return all_slidenames
