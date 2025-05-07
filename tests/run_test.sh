@@ -11,6 +11,7 @@ MODELS_BASE_DIR=$(echo $models_path | cut -d'/' -f1,2)
 
 docker run \
     --name MutilsTest \
+    --gpus '"device=0,1,2,3,4"' \
     --rm \
     -it \
     -v $BASE_DIR/MuTILs_Panoptic:/home/MuTILs_Panoptic \
@@ -18,7 +19,8 @@ docker run \
     -v $BASE_DIR/MuTILs_Panoptic/tests/output:/home/output \
     -v $SLIDE_BASE_DIR:$SLIDE_BASE_DIR \
     -v $MODELS_BASE_DIR:$MODELS_BASE_DIR \
-    szolgyen/mutils:v1 \
+    --ulimit core=0 \
+    szolgyen/mutils:v2 \
     bash -c "source /home/MuTILs_Panoptic/tests/.bashrc $slide_path $models_path && bash"
 
 echo "Test finished. Container exited."

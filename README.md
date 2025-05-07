@@ -22,60 +22,53 @@ Tumor-Infiltrating Lymphocytes (TILs) have strong prognostic and predictive valu
 
 ### Containerized approach
 
-We recommend using the <i>szolgyen/mutils:v1</i> image from Docker Hub to perform inference with MuTILs. This image is based on Ubuntu 22.04 and includes a Python 3.10.12 virtual environment preconfigured with all the necessary packages for MuTILs. It is built on [nvidia/cuda:12.0.0-base-ubuntu22.04](https://hub.docker.com/layers/nvidia/cuda/12.0.0-base-ubuntu22.04/images/sha256-3b6f49136ec6725b6fcc0fc04f2f7711d3d1e22d0328da2ca73e52dbd37fa4b1), providing CUDA 12.0.0 compatibility.
+We recommend using the <i>szolgyen/mutils:v2</i> image from Docker Hub to perform inference with MuTILs. This image is based on Ubuntu 22.04 and includes a Python 3.10.12 virtual environment preconfigured with all the necessary packages for MuTILs. It is built on [nvidia/cuda:12.0.0-base-ubuntu22.04](https://hub.docker.com/layers/nvidia/cuda/12.0.0-base-ubuntu22.04/images/sha256-3b6f49136ec6725b6fcc0fc04f2f7711d3d1e22d0328da2ca73e52dbd37fa4b1), providing CUDA 12.0.0 compatibility.
 
-For a complete list of dependencies and additional details, refer to the [Dockerfile](https://github.com/szolgyen/MuTILs_Panoptic/blob/main/Dockerfile) in this repository.
+For the list of dependencies and additional details, refer to the [Dockerfile](https://github.com/szolgyen/MuTILs_Panoptic/blob/main/Dockerfile) in this repository.
+
+>The container has a preinstalled version of MuTILs in the home folder. There is no need to clone this repository in the container.
 
 #### Pull the docker image on your GPU server:
 
-1. `docker pull szolgyen/mutils:v1`
+1. `docker pull szolgyen/mutils:v2`
 
-We recommend using a `docker-compose.yaml` file to start the container, see this example
+We recommend using a `run_docker.sh` file to start the container, see this example
 
-```yaml
-version: '3'
-
-services:
-  mutilsdev:
-    image: szolgyen/mutils:v1
-    container_name: MutilsInference
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=1
-    ipc: host
-    network_mode: host
-    volumes:
-      - /your/path/to/the/model/weights:/home/models
-      - /your/path/to/the/input/files:/home/input
-      - /your/path/to/the/output/files:/home/output
-    ulimits:
-      core: 0
-    stdin_open: true
-    tty: true
-    restart: "no"
+```bash
+docker run \
+    --name Mutils \
+    --gpus '"device=0,1,2,3,4"' \
+    --rm \
+    -it \
+    -v /path/to/the/slides:/home/input \
+    -v /path/to/the/output:/home/output \
+    -v /path/to/the/mutils/models:/home/models \
+    --ulimit core=0 \
+    szolgyen/mutils:v2 \
+    bash
 ```
 The container needs the
 
-- /home/models
 - /home/input
 - /home/output
+- /home/models
 
-mounting points to be connected to the corresponding server volumes. Make sure that these are set properly in the `docker-compose.yaml` file.
+mounting points to be connected to the corresponding server volumes. Make sure that these are set properly in the `run_docker.sh` file.
 
 #### Start the container
 
-2. `docker-compose up`
-
-Once the container is up, attach to it in a separate terminal window:
-
-3. `docker attach MutilsInference`
+2. `./run_docker.sh`
 
 Within the container, check and customize the configuration file at
 
-4. `/home/MuTILs_Panoptic/configs/MuTILsWSIRunConfigs.yaml`,
+3. `/home/MuTILs_Panoptic/configs/MuTILsWSIRunConfigs.yaml`.
 
-and run the MuTILsWSIRunner.py module to perform inference on your set of slides
+> If not changing the parameters in the configuration file, MuTILs will run with the default parameters. The default parameters are found at [configs/MuTILsWSIRunConfigs.py](https://github.com/szolgyen/MuTILs_Panoptic/blob/520e1af15714abd9fae24cc9def5a07b5b6a6181/configs/MuTILsWSIRunConfigs.py#L145).<br><br>
+The code also records the configuration parameters in the run's log file for reproducibility.
 
-5. `python MuTILs_Panoptic/mutils_panoptic/MuTILsWSIRunner.py`
+#### Run MuTILs
+
+4. `python MuTILs_Panoptic/mutils_panoptic/MuTILsWSIRunner.py`
 
 ### Recommended directory structure
 
@@ -98,6 +91,29 @@ Host (recommended)                      Container (default)
 └── docker-compose.yaml                     ├── MuTILs_Panoptic
                                             └── venv
 ```
+
+## Output
+
+The code creates two folders in the mounted output directory:
+   - <i>LOGS</i> - the terminal output from the running code saved as a log file. It contains information about:
+       - the configuration parameters of the run,
+       - GPU availability and which model is loaded on which GPU,
+       - slide name, and slide ROI scoring steps,
+       - ROI processing progress,
+       - duration of the process per slide and overall
+   - <i>perSlideResults</i> - results of the segmentation and feature extraction are stored here.
+       - each slide has its own folder
+       - each slide folder has the following subfolders:
+           - nucleiMeta - nucleus metadata per ROI in CSV files
+           - nucleiProps - nucleus features per ROI in CSV files
+           - roiMasks - segmentation masks per ROI
+           - roiMeta - aggregated features per ROI in a JSON file
+       - each slide folder has the following files too:
+           - *slidename*_RoiLocs.csv - ROI coordinates and scores
+           - *slidename*_RoiLocs.png - visualization of ROI locations
+           - *slidename*.json - aggregated features of the whole slide
+           - *slidename*.tif - combined segmentation mask <br>MuTILsMaskVisualizer.py can be used to convert it to a color-coded image
+
 
 ### Model weights
 
