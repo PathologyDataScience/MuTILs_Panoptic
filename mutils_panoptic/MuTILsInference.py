@@ -135,8 +135,13 @@ class ROIPreProcessor:
     def run(self):
         """Loop through one chunk."""
         for single_roi in self.roi_chunk:
-            self.run_roi(single_roi)
-            self.inference_queue.put(self.roi)
+            try:
+                roi = self.run_roi(single_roi)
+                self.inference_queue.put(roi)
+            except Exception as e:
+                # TODO: record error in the log file
+                print(f"Error processing ROI: {e}")
+                continue
 
     def run_roi(self, single_roi: tuple):
         """Run the preprocessing for one ROI."""
@@ -160,6 +165,8 @@ class ROIPreProcessor:
             tile_size=(self.roi_side_hres, self.roi_side_hres),
         )
         self._provide_input(tile=tile)
+
+        return self.roi
 
     def _get_roi_coords(self, roi_number: int) -> list:
         """Get the coordinates of the ROI."""
