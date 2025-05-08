@@ -363,8 +363,12 @@ class ROIPostProcessor:
             roi: InferenceResult = self.postprocess_queue.get()
             if roi is None:
                 break
-            self.run_roi(roi)
-            self.logger.info(f"Completed ROI {roi.number} by {roi.model}.")
+            try:
+                self.run_roi(roi)
+                self.logger.info(f"Completed ROI {roi.number} by {roi.model}.")
+            except Exception as e:
+                self.logger.error(f"Error processing ROI {roi.number}: {e}")
+                continue
 
     def run_roi(self, roi: InferenceResult) -> None:
         """Run postprocessing for the ROI.
