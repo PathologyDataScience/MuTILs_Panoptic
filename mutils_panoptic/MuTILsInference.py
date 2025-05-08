@@ -259,21 +259,26 @@ class ROIInferenceProcessor:
             if roi is None:
                 self.put(end_signal=True)
                 break
-            result = self.inference(roi)
-            roi.to_cpu()
-            self.inference_result = InferenceResult(
-                number=roi.number,
-                coords=roi.coords,
-                name=roi.name,
-                model=roi.model,
-                batch=roi.batch,
-                hres_ignore=roi.hres_ignore,
-                img=roi.img,
-                result=result,
-            )
-            self.inference_result.to_cpu()
-            torch.cuda.empty_cache()
-            self.put()
+            try:
+                result = self.inference(roi)
+                roi.to_cpu()
+                self.inference_result = InferenceResult(
+                    number=roi.number,
+                    coords=roi.coords,
+                    name=roi.name,
+                    model=roi.model,
+                    batch=roi.batch,
+                    hres_ignore=roi.hres_ignore,
+                    img=roi.img,
+                    result=result,
+                )
+                self.inference_result.to_cpu()
+                torch.cuda.empty_cache()
+                self.put()
+            except Exception as e:
+                # TODO: record error in the log file
+                print(f"Error processing ROI: {e}")
+                continue
 
     def inference(self, roi: ROI):
 
