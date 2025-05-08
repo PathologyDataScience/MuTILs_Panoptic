@@ -1319,8 +1319,14 @@ if __name__ == "__main__":
         config.logger.info(f"*** {slmonitor} ***")
         config.logger.info(f"")
 
-        # Run a slide
-        runner.run_slide(slmonitor, slide)
+        try:
+            runner.run_slide(slmonitor, slide)
+        except Exception as e:
+            config.logger.error(
+                f"Error processing slide {slide.name}: {e}", exc_info=True
+            )
+            config.logger.info("Skipping to the next slide...")
+        continue
 
     end = time.time()
 
