@@ -78,11 +78,8 @@ class ProcessManager:
         params : dict
             A dictionary containing the configuration parameters for preprocessing.
         """
-        assert (
-            len(roi_chunks) == self.N_preproc
-        ), f"Number of chunks must match number of processes."
 
-        for i in range(self.N_preproc):
+        for i in range(len(roi_chunks)):
             roi_chunk = roi_chunks[i]
             # Each chunk has a model assigned to it and each model has its queue.
             # Pass the right chunk - queue pair to the process:
@@ -655,28 +652,35 @@ class MuTILsWSIRunner:
             number and the model name.
         """
 
-        assert self.N_preprocesses % 5 == 0, (
-            "Number of CPUs must be divisible by 5. "
-            "This is to ensure that each model gets at least one chunk."
-        )
+        roi_pairs = [(roi, model) for model, rois in model_rois.items() for roi in rois]
 
-        chunk_fraction = (
-            self.N_preprocesses / 5
-        )  # number of chunks to split each model's rois into
+        total_rois = len(roi_pairs)
+        if total_rois == 0:
+            return []
+
+        # Calculate how many chunks each model should get (proportional to ROI count)
+        model_counts = {model: len(rois) for model, rois in model_rois.items()}
+        model_chunks = {
+            model: max(1, int(round(self.N_preprocesses * (count / total_rois))))
+            for model, count in model_counts.items()
+        }
+
+        # Reduce one chunk from the largest model if too many chunks were assigned
+        while sum(model_chunks.values()) > min(self.N_preprocesses, total_rois):
+            max_model = max(model_chunks, key=model_chunks.get)
+            model_chunks[max_model] -= 1
+
         roi_chunks = []
-        for k, v in model_rois.items():
-            chunked = np.array_split(v, chunk_fraction)
-            for c in chunked:
-                nested_chunk = [(int(item), k) for item in c.tolist()]
-                roi_chunks.append(nested_chunk)
 
-        # Check if all elemnts of the chunk are assigned to the same model
-        check_model_consistency = [
-            all([roi[1] == chunk[0][1] for roi in chunk]) for chunk in roi_chunks
-        ]
-        assert all(
-            check_model_consistency
-        ), "All elements of the chunk must be assigned to the same model."
+        for model, rois in model_rois.items():
+            n_chunks = model_chunks.get(model, 0)
+            if not rois or n_chunks == 0:
+                continue
+            split = np.array_split(rois, n_chunks)
+            for part in split:
+                chunk = [(roi, model) for roi in part.tolist()]
+                if chunk:
+                    roi_chunks.append(chunk)
 
         return roi_chunks
 
@@ -1319,8 +1323,14 @@ if __name__ == "__main__":
         config.logger.info(f"*** {slmonitor} ***")
         config.logger.info(f"")
 
-        # Run a slide
-        runner.run_slide(slmonitor, slide)
+        try:
+            runner.run_slide(slmonitor, slide)
+        except Exception as e:
+            config.logger.error(
+                f"Error processing slide {slide.name}: {e}", exc_info=True
+            )
+            config.logger.info("Skipping to the next slide...")
+        continue
 
     end = time.time()
 

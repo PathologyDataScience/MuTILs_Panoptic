@@ -135,8 +135,13 @@ class ROIPreProcessor:
     def run(self):
         """Loop through one chunk."""
         for single_roi in self.roi_chunk:
-            self.run_roi(single_roi)
-            self.inference_queue.put(self.roi)
+            try:
+                roi = self.run_roi(single_roi)
+                self.inference_queue.put(roi)
+            except Exception as e:
+                # TODO: record error in the log file
+                print(f"Error processing ROI: {e}")
+                continue
 
     def run_roi(self, single_roi: tuple):
         """Run the preprocessing for one ROI."""
@@ -160,6 +165,8 @@ class ROIPreProcessor:
             tile_size=(self.roi_side_hres, self.roi_side_hres),
         )
         self._provide_input(tile=tile)
+
+        return self.roi
 
     def _get_roi_coords(self, roi_number: int) -> list:
         """Get the coordinates of the ROI."""
@@ -252,21 +259,26 @@ class ROIInferenceProcessor:
             if roi is None:
                 self.put(end_signal=True)
                 break
-            result = self.inference(roi)
-            roi.to_cpu()
-            self.inference_result = InferenceResult(
-                number=roi.number,
-                coords=roi.coords,
-                name=roi.name,
-                model=roi.model,
-                batch=roi.batch,
-                hres_ignore=roi.hres_ignore,
-                img=roi.img,
-                result=result,
-            )
-            self.inference_result.to_cpu()
-            torch.cuda.empty_cache()
-            self.put()
+            try:
+                result = self.inference(roi)
+                roi.to_cpu()
+                self.inference_result = InferenceResult(
+                    number=roi.number,
+                    coords=roi.coords,
+                    name=roi.name,
+                    model=roi.model,
+                    batch=roi.batch,
+                    hres_ignore=roi.hres_ignore,
+                    img=roi.img,
+                    result=result,
+                )
+                self.inference_result.to_cpu()
+                torch.cuda.empty_cache()
+                self.put()
+            except Exception as e:
+                # TODO: record error in the log file
+                print(f"Error processing ROI: {e}")
+                continue
 
     def inference(self, roi: ROI):
 
@@ -351,8 +363,12 @@ class ROIPostProcessor:
             roi: InferenceResult = self.postprocess_queue.get()
             if roi is None:
                 break
-            self.run_roi(roi)
-            self.logger.info(f"Completed ROI {roi.number} by {roi.model}.")
+            try:
+                self.run_roi(roi)
+                self.logger.info(f"Completed ROI {roi.number} by {roi.model}.")
+            except Exception as e:
+                self.logger.error(f"Error processing ROI {roi.number}: {e}")
+                continue
 
     def run_roi(self, roi: InferenceResult) -> None:
         """Run postprocessing for the ROI.
