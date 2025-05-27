@@ -1029,7 +1029,24 @@ class MuTILsWSIRunner:
         # get slide and mask at saliency mpp
         sf = self.roi_clust_mpp / self._slide.base_mpp
         rgb = self._slide.scaled_image(sf)
-        mask = Image.fromarray(BiggestTissueBoxMask()._thumb_mask(self._slide))
+        slide_extension = self._slide._path.split(".")[-1]
+        if slide_extension == "mrxs":
+            # Remove black pixels from thumbnail
+            _thumb = self._slide.thumbnail
+            thumb = np.array(_thumb, dtype=np.uint8)
+            thumb_mask = np.all(thumb == [0, 0, 0], axis=-1)
+            thumb[thumb_mask] = [255, 255, 255]
+            thumb = Image.fromarray(thumb)
+            # Remove black pixels from the image
+            _rgb = np.array(rgb, dtype=np.uint8)
+            rgb_mask = np.all(_rgb == [0, 0, 0], axis=-1)
+            _rgb[rgb_mask] = [255, 255, 255]
+            rgb = Image.fromarray(_rgb)
+        else:
+            thumb = None
+        mask = Image.fromarray(
+            BiggestTissueBoxMask()._thumb_mask(self._slide, thumb=thumb)
+        )
         mask = np.uint8(mask.resize(rgb.size[:2]))
         # maybe cluster
         if self._topk_rois_sampling_mode == "stratified":
