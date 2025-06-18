@@ -243,12 +243,10 @@ class ROIPreProcessor:
 class ROIInferenceProcessor:
     def __init__(
         self,
-        gpu_id: int,
         inference_queue: mp.Queue,
         postprocess_queue: mp.Queue,
         model: dict,
     ):
-        self.gpu_id = gpu_id
         self.inference_queue = inference_queue
         self.postprocess_queue = postprocess_queue
         self.model = model
@@ -282,7 +280,7 @@ class ROIInferenceProcessor:
 
     def inference(self, roi: ROI):
 
-        device = f"cuda:{self.gpu_id}" if torch.cuda.is_available() else "cpu"
+        device = f"cuda:{self.model['device']}" if torch.cuda.is_available() else "cpu"
 
         highres_rgb = torch.as_tensor(
             roi.batch.highres_rgb, dtype=torch.float32, device=device

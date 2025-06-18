@@ -115,22 +115,22 @@ class ProcessManager:
         Parameters
         ----------
         models : dict
-            A dictionary containing the model objects as keys and the device IDs as
-            values.
+            A dictionary containing the model objects and the device IDs.
         """
+        model_names = [f"mutils_06022021-fold{i}" for i in range(1, 6)]
         for i in range(self.N_inferproc):
             inference_queue = self.inference_queues[i]
-            model = models[list(models.keys())[i]]
+            model = models[model_names[i]]
             process = mp.Process(
                 target=self.inference_worker,
-                args=(i, inference_queue, self.postprocess_queue, model),
+                args=(inference_queue, self.postprocess_queue, model),
             )
             self.inference_processes.append(process)
             process.start()
 
     @staticmethod
     def inference_worker(
-        gpu_id: int, inference_queue: mp.Queue, postprocess_queue: mp.Queue, model: dict
+        inference_queue: mp.Queue, postprocess_queue: mp.Queue, model: dict
     ) -> None:
         """Create an instance of ROIInferenceProcessor and run it.
 
@@ -146,7 +146,6 @@ class ProcessManager:
             A dictionary containing the model object and the device ID.
         """
         inference_processor = ROIInferenceProcessor(
-            gpu_id=gpu_id,
             inference_queue=inference_queue,
             postprocess_queue=postprocess_queue,
             model=model,
@@ -520,22 +519,62 @@ class MuTILsWSIRunner:
                 self.logger.info(f"ROI {roi} processed with model {model_name}")
 
     def check_gpus(self):
-        """Check if GPUs are available. Set self.use_gpus accordingly: True if at least 5 GPUs are
-        available, False otherwise.
+        """Check if GPUs are available and distribute models on them according to the
+        available VRAM.
         """
         self.logger.info("   Checking GPUs")
         self.logger.info("")
-        if torch.cuda.is_available() and (torch.cuda.device_count() > 4):
+        if torch.cuda.is_available():
             self.logger.info(f"Number of GPUs available: {torch.cuda.device_count()}")
-            self.logger.info(f"Running multiple models in parallel on multiple GPUs.")
-            self.load_all_models()
-            self.use_gpus = True
-        elif torch.cuda.is_available() and (torch.cuda.device_count() < 5):
-            self.logger.info(
-                f"Number of GPUs ({torch.cuda.device_count()}) is less than the number of models (5)"
+
+            required_memory = 8  # GB per model
+            required_memory_bytes = required_memory * 1024**3
+
+            gpu_memories = [
+                (i, torch.cuda.get_device_properties(i).total_memory)
+                for i in range(torch.cuda.device_count())
+            ]
+
+            sorted_gpus = (
+                sorted(gpu_memories, key=lambda x: x[1], reverse=True)
+                if len(set(mem for _, mem in gpu_memories)) != 1
+                else gpu_memories
             )
-            self.logger.info(f"Running single model at once on a single GPU.")
-            self.use_gpus = False  # Don't get confused, a single GPU still can be used!
+
+            # 5 models fit on the first GPU
+            if sorted_gpus[0][1] > 5 * required_memory_bytes:
+                model_distribute = [str(sorted_gpus[0][0])] * 5
+            # 3 models fit on the first GPU, 2 on the second
+            elif (
+                len(sorted_gpus) >= 2
+                and sorted_gpus[0][1] > 3 * required_memory_bytes
+                and sorted_gpus[1][1] > 2 * required_memory_bytes
+            ):
+                model_distribute = [
+                    str(sorted_gpus[0][0]),
+                    str(sorted_gpus[0][0]),
+                    str(sorted_gpus[0][0]),
+                    str(sorted_gpus[1][0]),
+                    str(sorted_gpus[1][0]),
+                ]
+            # 2 models fit on the first GPU, 2 on the second, 1 on the third
+            elif len(sorted_gpus) >= 3 and all(
+                m > required_memory_bytes for _, m in sorted_gpus[:3]
+            ):
+                model_distribute = [
+                    str(sorted_gpus[0][0]),
+                    str(sorted_gpus[0][0]),
+                    str(sorted_gpus[1][0]),
+                    str(sorted_gpus[1][0]),
+                    str(sorted_gpus[2][0]),
+                ]
+            # 1 model fits on each of the first 5 GPUs
+            else:
+                model_distribute = [str(gpu_id) for gpu_id, _ in sorted_gpus[:5]]
+
+            self.logger.info(f"Running multiple models in parallel on multiple GPUs.")
+            self.load_all_models(model_distribute)
+            self.use_gpus = True
         else:
             self.logger.info("No GPU available, using CPU instead.")
             self.use_gpus = False
@@ -573,12 +612,12 @@ class MuTILsWSIRunner:
         )
         return model
 
-    def load_all_models(self) -> None:
+    def load_all_models(self, model_distribute) -> None:
         """Load all models if there are enough GPUs available (5)."""
         self.models = {}
         i = 0
         for model_name, model_path in self.model_paths.items():
-            device_id = str(i) if torch.cuda.is_available() else None
+            device_id = model_distribute[i] if torch.cuda.is_available() else None
             i += 1
             model = self.load_model(model_path, device_id)
             self.models[model_name] = {"model": model, "device": device_id}
