@@ -112,7 +112,43 @@ The code creates two folders in the mounted output directory:
            - *slidename*_RoiLocs.csv - ROI coordinates and scores
            - *slidename*_RoiLocs.png - visualization of ROI locations
            - *slidename*.json - aggregated features of the whole slide
-           - *slidename*.tif - combined segmentation mask <br>MuTILsMaskVisualizer.py can be used to convert it to a color-coded image
+           - *slidename*.tif - combined segmentation mask (MuTILsMaskVisualizer.py can be used to convert it to a color-coded image)
+       - <i>slidename.json</i> - has the following aggregated metrics:
+           - n_rois:
+           - n_salient_rois:
+           - Mean_SaliencyScore:
+           - Mean_TissueRatio:
+           - Mean_TILs2AnyStromaRatio:
+           - Mean_TILs2AllRatio:
+           - Mean_TILs2TumorRatio:
+           - Mean_SalientTILs2StromaRatio:
+           - Mean_nTILsCells2AnyStromaRegionArea:
+           - Mean_nTILsCells2nStromaCells:
+           - Mean_nTILsCells2nAllStromaCells:
+           - Mean_nTILsCells2nAllCells:
+           - Mean_nTILsCells2nTumorCells:
+           - Std_SaliencyScore:
+           - Std_TissueRatio:
+           - Std_TILs2AnyStromaRatio:
+           - Std_TILs2AllRatio:
+           - Std_TILs2TumorRatio:
+           - Std_SalientTILs2StromaRatio:
+           - Std_nTILsCells2AnyStromaRegionArea:
+           - Std_nTILsCells2nStromaCells:
+           - Std_nTILsCells2nAllStromaCells:
+           - Std_nTILsCells2nAllCells:
+           - Std_nTILsCells2nTumorCells:
+           - SaliencyScore:
+           - TissueRatio:
+           - TILs2AnyStromaRatio:
+           - TILs2AllRatio:
+           - TILs2TumorRatio:
+           - SalientTILs2StromaRatio:
+           - nTILsCells2AnyStromaRegionArea:
+           - nTILsCells2nStromaCells:
+           - nTILsCells2nAllStromaCells:
+           - nTILsCells2nAllCells:
+           - nTILsCells2nTumorCells:
 
 
 ### Model weights
